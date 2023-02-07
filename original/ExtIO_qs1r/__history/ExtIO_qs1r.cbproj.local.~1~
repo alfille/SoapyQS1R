@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+  <Transactions>
+    <Transaction>2011/04/11 09:39:00.799.cpp,C:\Users\phil\Documents\RAD Studio\Projects\File1.cpp=C:\Users\phil\Documents\RAD Studio\Projects\dllmain.cpp</Transaction>
+    <Transaction>2011/04/11 09:40:05.238.cbproj,C:\Users\phil\Documents\RAD Studio\Projects\Project1.cbproj=C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r.cbproj</Transaction>
+    <Transaction>2011/04/11 09:40:43.130.cpp,C:\Users\phil\Documents\RAD Studio\Projects\dllmain.cpp=C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\dllmain.cpp</Transaction>
+    <Transaction>2011/04/11 09:40:47.505.cbproj,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r.cbproj=C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\ExtIO_qs1r.cbproj</Transaction>
+    <Transaction>2011/04/11 10:20:45.375.cpp,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qsform_wait.cpp=</Transaction>
+    <Transaction>2011/04/11 10:20:45.375.dfm,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qsform_wait.dfm=</Transaction>
+    <Transaction>2011/04/11 10:20:50.581.cpp,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qsform_control.cpp=</Transaction>
+    <Transaction>2011/04/11 10:20:50.581.dfm,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qsform_control.dfm=</Transaction>
+    <Transaction>2011/04/11 10:20:53.652.cpp,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qs_io_libusb.cpp=</Transaction>
+    <Transaction>2011/04/11 10:20:58.252.h,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qs_io_libusb.h=</Transaction>
+    <Transaction>2011/04/11 10:25:45.868.c,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qs_io_libusb.c=</Transaction>
+    <Transaction>2011/04/11 13:05:14.882.cpp,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qs_io_libusb.cpp=</Transaction>
+    <Transaction>2011/04/11 13:20:00.680.c,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qs_io_libusb.c=</Transaction>
+    <Transaction>2011/04/11 14:12:09.217.cpp,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\Unit1.cpp=C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qsform.cpp</Transaction>
+    <Transaction>2011/04/11 14:12:09.217.h,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\Unit1.h=C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qsform.h</Transaction>
+    <Transaction>2011/04/11 14:12:09.217.dfm,C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\Unit1.dfm=C:\Users\phil\Documents\RAD Studio\Projects\ExtIO_qs1r\qsform.dfm</Transaction>
+  </Transactions>
+</BorlandProject>

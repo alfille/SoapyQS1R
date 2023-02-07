@@ -1,0 +1,728 @@
+
+#include "qs_io_libusb.h"
+
+void init( )
+{
+    hdev = NULL;
+
+	dev_was_found = false;
+	dev_count = 0;
+	ep_count = 0;
+	qs_EP2 = 0x02;
+	qs_EP4 = 0x04;
+	qs_EP6 = 0x86;
+	qs_EP8 = 0x88;
+
+	usb_init( );
+}
+
+void clearHalt( int ep )
+{
+    if ( hdev != NULL ) usb_clear_halt( hdev, ep );
+}
+
+void close( )
+{
+    if ( hdev )
+    {
+        usb_clear_halt( hdev, qs_EP2 );
+        usb_clear_halt( hdev, qs_EP4 );
+        usb_clear_halt( hdev, qs_EP6 );
+        usb_clear_halt( hdev, qs_EP8 );
+        usb_release_interface( hdev, 0 );
+        usb_close( hdev );
+    }
+    hdev = NULL;
+}
+
+int findQsDevice( )
+{
+    dev_count = 0;
+    dev_was_found = false;
+
+    usb_find_busses( );
+    usb_find_devices( );
+
+    struct usb_bus * bus;
+    struct usb_device * dev;
+
+    for (bus = usb_get_busses(); bus; bus = bus->next)
+    {
+        for (dev = bus->devices; dev; dev = dev->next)
+        {
+            if ( (	dev->descriptor.idVendor == QS1R_VID 
+                        && dev->descriptor.idProduct == QS1R_PID )
+                || ( dev->descriptor.idVendor == QS1R_MISSING_EEPROM_VID
+                     && dev->descriptor.idProduct == QS1R_MISSING_EEPROM_PID ) )
+                {
+                device_path.append( QString::fromUtf8( dev->filename ) );
+                hdev = usb_open(dev);
+                dev_count++;
+                dev_was_found = true;
+                goto found;
+            }
+        }
+    }
+    qDebug( ) << "Could not find device.";
+    return -1;
+
+    found:
+
+    if ( hdev )
+    {
+        if ( usb_set_configuration( hdev, 1 ) != 0 )
+        {
+            qDebug( ) << "Could not set configuration 1.";
+            return -1;
+        }
+        if ( usb_claim_interface( hdev, 0 ) != 0 )
+        {
+            qDebug( ) << "Could not claim interface 0.";
+            return -1;
+        }
+        if ( usb_set_altinterface( hdev, 0 ) != 0 )
+        {
+            qDebug( ) << "Could not set alt interface 0.";
+            return -1;
+        }
+
+        if ( usb_clear_halt( hdev, qs_EP2 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP2";
+        }
+        if ( usb_clear_halt( hdev, qs_EP4 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP4";
+        }
+        if ( usb_clear_halt( hdev, qs_EP6 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP6";
+        }
+        if ( usb_clear_halt( hdev, qs_EP8 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP8";
+        }
+    }
+    return 0;
+}
+
+int deviceCount( )
+{
+    return dev_count;
+}
+
+int epCount( )
+{
+    return ep_count;
+}
+
+int loadFirmware( char * filename )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    // PUT CPU IN RESET
+
+    char value = 1;
+    if (!write_cpu_ram(FX2_RAM_RESET, &value, 1))
+    {
+        qDebug( ) << "Could not put CPU in reset.";
+        return -1;
+    }
+
+    QFile file( filename );
+
+    if ( !file.open( QIODevice::ReadOnly ) )
+    {
+        qDebug( ) << "loadFirmware: filename does not exist.";
+        return -1;
+    }
+
+    QTextStream in( &file );
+
+    while ( !in.atEnd( ) )
+    {
+        QString str;
+
+        in >> str;
+
+        if ( str.mid( 0, 1 ) != ":" )
+        {
+            file.close( );
+            qDebug( ) << "loadFirmware: error, firmware file appears to be corrupted";
+            return -1;
+        }
+
+        bool ok = false;
+
+        int flength = str.mid( 1, 2 ).toInt( &ok, 16 );
+        if ( !ok ) return -1;
+        int faddr = str.mid( 3, 4 ).toInt( &ok, 16 );
+        if ( !ok ) return -1;
+        int type = str.mid( 7, 2 ).toInt( &ok, 16 );
+        if ( !ok ) return -1;
+
+        if ( type == 0 )
+        {
+            QString sstr = str.mid( 9, flength * 2 );
+            QByteArray ba;
+
+            for ( int i = 0; i < sstr.length( ); i+=2 )
+            {
+                ba.append( sstr.mid( i, 2 ).toInt( &ok, 16 ) );
+            }
+
+            if ( !write_cpu_ram( faddr, ba.data(), flength ) )
+            {
+                qDebug( ) << "loadFirmware: write failed.";
+                file.close( );
+                return -1;
+            }
+        }
+        else if ( type == 0x01 )
+        {
+            break;
+        } 
+        else if ( type == 0x02 )
+        {
+            qDebug( ) << "loadFirmware: extended address not supported.";
+            file.close( ); 
+            return -1;
+        }
+    }
+    
+    // TAKE CPU OUT OF RESET
+
+    value = 0;
+    if (!write_cpu_ram(FX2_RAM_RESET, &value, 1))
+    {
+        qDebug( ) << "Could not take CPU out of reset.";
+        return -1;
+    }
+
+
+    return 0;
+}
+
+int loadFpga( char * filename )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    QFile file( filename );
+
+    if ( !file.open( QIODevice::ReadOnly ) )
+    {
+        qDebug( ) << "loadFpga: filename does not exist.";
+        return -1;
+    }
+    
+    unsigned long count = 0;
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_OUT,
+                                VRQ_FPGA_LOAD,
+                                0,
+                                FL_BEGIN,
+                                0,
+                                0,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != 0 )
+    {
+        file.close( );
+        qDebug( ) << "loadFpga: failed in FL_BEGIN load stage";
+        return -1;
+    }
+
+    while ( !file.atEnd( ) )
+    {
+        QByteArray ba = file.read( MAX_EP4_PACKET_SIZE );
+
+        int len = writeEP4( (unsigned char *)ba.data( ), ba.length( ) );
+        if ( len != ba.length( ) )
+        {
+            file.close( );
+            qDebug( ) << "loadFpga: failed in FL_XFER load stage";
+            break;
+        }
+    }
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_OUT,
+                                VRQ_FPGA_LOAD,
+                                0,
+                                FL_END,
+                                0,
+                                0,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != 0 )
+    {
+        file.close( );
+        qDebug( ) << "loadFpga: failed in FL_END load stage";
+        return -1;
+    }
+
+    file.close( );
+
+
+    return 0;
+}
+
+int readFwSn( )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    unsigned long count = 0;
+    unsigned long nsize = 4;
+    char buf[4];
+
+    for ( unsigned int i = 0; i < nsize; i++ )
+    {
+        buf[i] = 0;
+    }
+
+    count = usb_control_msg(	hdev, 
+                                VRT_VENDOR_IN,
+                                VRQ_SN_READ,
+                                0,
+                                0,
+                                buf,
+                                nsize,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != nsize )
+    {
+        qDebug( ) << "readFwSn: control transfer failed.";
+        return -1;
+    }
+    return (int)((unsigned char)buf[0] +
+                 ((unsigned char)buf[1] << 8) +
+                 ((unsigned char)buf[2] << 16) +
+                 ((unsigned char)buf[3] << 24));
+}
+
+int read( int ep, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    int chanreg;
+    unsigned long count;
+
+    if (ep == 6)
+        chanreg = qs_EP6;
+    else if (ep == 8)
+        chanreg = qs_EP8;
+    else
+    {
+        qDebug( ) << "read: ep is invalid... (6/8 is valid)";
+        return -1;
+    }
+
+    count = usb_bulk_read( hdev, chanreg, (char *)buffer, length, USB_TIMEOUT_BULK );
+
+    if ( count != (unsigned int)length )
+    {
+        qDebug( ) << "read: could not read pipe.";
+        return -1;
+    }
+
+    return count;
+}
+
+int write( int ep, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    int chanreg;
+    unsigned long count;
+
+    if (ep == 2)
+        chanreg = qs_EP2;
+    else if (ep == 4)
+        chanreg = qs_EP4;
+    else
+    {
+        qDebug( ) << "write: ep is invalid... (2/4 is valid)";
+        return -1;
+    }
+
+    count = usb_bulk_write( hdev, chanreg, (char *)buffer, length, USB_TIMEOUT_BULK );
+
+    if ( count != (unsigned int)length )
+    {
+        qDebug( ) << "write: could not write pipe";
+        return -1;
+    }
+
+    return count;
+}
+
+int writeEP2( unsigned char * buffer, int length )
+{
+    if ( usb_bulk_write( hdev, qs_EP2, (char *)buffer, length, USB_TIMEOUT_BULK ) != length )
+    {
+        qDebug( ) << "write: could not write pipe";
+        if ( usb_clear_halt( hdev, EP2 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP2";
+        }
+        return -1;
+    }
+    return length;
+}
+
+int writeEP4( unsigned char * buffer, int length )
+{
+    if ( usb_bulk_write( hdev, qs_EP4, (char *)buffer, length, USB_TIMEOUT_BULK ) != length )
+    {
+        qDebug( ) << "write: could not write pipe";
+        if ( usb_clear_halt( hdev, EP4 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP4";
+        }
+        return -1;
+    }
+    return length;
+}
+
+int readEP6( unsigned char * buffer, int length )
+{
+    if ( usb_bulk_read( hdev, qs_EP6, (char *)buffer, length, USB_TIMEOUT_BULK ) != length )
+    {
+        qDebug( ) << "read: could not read pipe.";
+        if ( usb_clear_halt( hdev, EP6 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP6";
+        }
+        return -1;
+    }
+    return length;
+}
+
+int readEP8( unsigned char * buffer, int length )
+{
+    if ( usb_bulk_read( hdev, qs_EP8, (char *)buffer, length, USB_TIMEOUT_BULK ) != length )
+    {
+        qDebug( ) << "read: could not read pipe.";
+        if ( usb_clear_halt( hdev, EP8 ) != 0 )
+        {
+            qDebug( ) << "Could not clear halt on EP8";
+        }
+        return -1;
+    }
+    return length;
+}
+
+int readEEPROM( int address, int offset, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    unsigned char cmd[2];
+
+    if (length < 1) return -1;
+    if (buffer == 0) return -1;
+
+    cmd[0] = (char)((0xFF00 & offset) >> 8); // high byte address
+    cmd[1] = (char)(0xFF & offset); // low byte address
+
+    // set address pointer in EEPROM
+    if (writeI2C(address, cmd, 2) != 2)
+    {
+        qDebug( ) << "readEEPROM: Could not set EEPROM address";
+        return -1;
+    }
+
+    // now read from the address
+    if (readI2C(address, buffer, length) != length)
+    {
+        qDebug( ) << "readEEPROM: Could not read EEPROM device";
+        return -1;
+    }
+
+    return length;
+}
+
+int writeEEPROM( int address, int offset, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    unsigned char cmd[3];
+    int i;
+
+    if (length < 1) return -1;
+    if (buffer == 0) return -1;
+
+    for (i=0; i < length; i++) {
+        cmd[0] = (char)((0xFF00 & offset) >> 8); // high byte address
+        cmd[1] = (char)(0xFF & offset); // low byte address
+        cmd[2] = (char)buffer[i]; // value to write
+        // set address pointer in EEPROM
+        if (writeI2C(address, cmd, 3) != 3)
+        {
+            qDebug( ) << "writeEEPROM: Could not write EEPROM";
+            return -1;
+        }
+        offset++;
+        qssleep.msleep(10);
+    }
+
+
+    return length;
+}
+
+int readI2C( int address, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    unsigned long count = 0;
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_IN,
+                                VRQ_I2C_READ,
+                                address,
+                                0,
+                                (char *)buffer,
+                                length,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != (unsigned int)length )
+    {
+        qDebug( ) << "readI2C: control transfer failed.";
+        return -1;
+    }
+
+    return count;
+}
+
+int writeI2C( int address, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    unsigned long count = 0;
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_OUT,
+                                VRQ_REQ_I2C_WRITE,
+                                address,
+                                0,
+                                (char *)buffer,
+                                length,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != (unsigned int)length )
+    {
+        qDebug( ) << "writeI2C: control transfer failed.";
+        return -1;
+    }
+
+    return count;
+}
+
+int readMultibusInt( int index )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    unsigned long count = 0;
+    unsigned char buf[4];
+    unsigned long nsize = 4;
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_IN,
+                                VRQ_MULTI_READ,
+                                index,
+                                0,
+                                (char *)buf,
+                                nsize,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != nsize)
+    {
+        qDebug( ) << "readMultibus: control transfer failed.";
+        return -1;
+    }
+
+    return buf[0] + (buf[1] << 8) + (buf[2] << 16) + (buf[3] << 24);
+}
+
+int readMultibusBuf( int index, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    if (length != 4)
+    {
+        qDebug( ) << "readMultibus: buffer must be length 4.";
+        return -1;
+    }
+
+    unsigned long count = 0;
+    unsigned long nsize = 4;
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_IN,
+                                VRQ_MULTI_READ,
+                                index,
+                                0,
+                                (char *)buffer,
+                                nsize,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != nsize )
+    {
+        qDebug( ) << "readMultibus: control transfer failed.";
+        return -1;
+    }
+
+    return nsize;
+}
+
+int writeMultibusInt( int index, int value )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    unsigned long count = 0;
+    unsigned char buf[4];
+    unsigned long nsize = 4;
+
+    buf[0] = (value >>  0) & 0xff;
+    buf[1] = (value >>  8) & 0xff;
+    buf[2] = (value >> 16) & 0xff;
+    buf[3] = (value >> 24) & 0xff;
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_OUT,
+                                VRQ_MULTI_WRITE,
+                                index,
+                                0,
+                                (char *)buf,
+                                nsize,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != nsize )
+    {
+        qDebug( ) << "writeMultibus: control transfer failed.";
+        return -1;
+    }
+
+    return count;
+}
+
+int writeMultibusBuf( int index, unsigned char * buffer, int length )
+{
+    if (!dev_was_found)
+    {
+        qDebug( ) << "Need to call findDevice first.";
+        return -1;
+    }
+
+    if (length != 4)
+    {
+        qDebug( ) << "writeMultibus: buffer must be length 4.";
+        return -1;
+    }
+
+    unsigned long count = 0;
+    unsigned long nsize = 4;
+
+    count = usb_control_msg(	hdev,
+                                VRT_VENDOR_OUT,
+                                VRQ_MULTI_WRITE,
+                                index,
+                                0,
+                                (char *)buffer,
+                                nsize,
+                                USB_TIMEOUT_CONTROL );
+
+    if ( count != nsize )
+    {
+        qDebug( ) << "writeMultibus: control transfer failed.";
+        return -1;
+    }
+
+    return nsize;
+}
+
+void resetDevice( )
+{
+    if ( hdev == 0 ) return;
+    usb_reset( hdev );
+}
+
+int write_cpu_ram(int startaddr, char * buffer, int length)
+{
+    int pkt_size = MAX_EP0_PACKET_SIZE;
+    int addr = 0;
+    int nsize = 0;
+    unsigned long count = 0;
+
+    for (addr = startaddr; addr < startaddr + length; addr += pkt_size)
+    {
+        nsize = length + startaddr - addr;
+        if (nsize > pkt_size) nsize = pkt_size;
+
+        count = usb_control_msg(hdev,
+                                VRT_VENDOR_OUT,
+                                FX2_WRITE_RAM_REQ,
+                                addr,
+                                0,
+                                (char *)(buffer + (addr - startaddr)),
+                                nsize,
+                                USB_TIMEOUT_CONTROL );
+
+
+        if ( count != (unsigned int)nsize )
+        {
+            qDebug( ) << "write_cpu_ram";
+            return -1;
+        }
+    }
+
+    return (int)count;
+}

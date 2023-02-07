@@ -1,0 +1,334 @@
+//---------------------------------------------------------------------------
+
+#include <vcl.h>
+#include <windows.h>
+#include "qs_io_libusb.h"
+#include <process.h>
+#include "qsform.h"
+#include "qsform_wait.h"
+#include <string>
+
+#pragma hdrstop
+//---------------------------------------------------------------------------
+//   Important note about DLL memory management when your DLL uses the
+//   static version of the RunTime Library:
+//
+//   If your DLL exports any functions that pass String objects (or structs/
+//   classes containing nested Strings) as parameter or function results,
+//   you will need to add the library MEMMGR.LIB to both the DLL project and
+//   any other projects that use the DLL.  You will also need to use MEMMGR.LIB
+//   if any other projects which use the DLL will be performing new or delete
+//   operations on any non-TObject-derived classes which are exported from the
+//   DLL. Adding MEMMGR.LIB to your project will change the DLL and its calling
+//   EXE's to use the BORLNDMM.DLL as their memory manager.  In these cases,
+//   the file BORLNDMM.DLL should be deployed along with your DLL.
+//
+//   To avoid using BORLNDMM.DLL, pass string information using "char *" or
+//   ShortString parameters.
+//
+//   If your DLL uses the dynamic version of the RTL, you do not need to
+//   explicitly add MEMMGR.LIB as this will be done implicitly for you
+//---------------------------------------------------------------------------
+
+#pragma argsused
+
+double LOfreq;
+void (* WinradCallBack)(int, int, float, void *);
+HANDLE hndl;
+void ThreadProc(void * param);
+int stop_thread;
+int MB_CONTROL1_BR;
+
+#define QS1R_FIRMWARE_VER "qs1r_firmware_03032011.hex"
+#define QS1R_FPGA_VER "QS1R_WINRAD_04112011.rbf"
+#define BLOCKSZ 4096
+
+int WINAPI DllEntryPoint(HINSTANCE hinst, unsigned long reason, void* lpReserved)
+{
+	return 1;
+}
+
+extern "C"
+bool __stdcall __declspec(dllexport) InitHW(char *name, char *model, int& type)
+{
+	static bool first = true;
+
+	type = 6;
+
+	if (first)
+    {
+        first = false;
+		LOfreq = 5000000;
+		WinradCallBack = NULL;
+    }
+
+	strcpy(name, "QS1R Receiver");
+	strcpy(model, " RevD");
+
+	MB_CONTROL1_BR = 0;
+    
+	return true;
+}
+
+extern "C"
+__declspec(dllexport) bool __stdcall OpenHW()
+{
+	qs1rio_init( );
+
+	static bool first = true;
+
+	if (first) {
+
+		QSWaitForm = new TQSWaitForm(NULL);
+		// Make form stay on top
+		SetWindowPos(QSWaitForm->Handle,
+				HWND_TOPMOST,
+				0, 0, 0, 0,
+				SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+		QSWaitForm->Show();
+		QSWaitForm->Update();
+
+		if (findQsDevice( ) == -1) // try to initialize board
+		{
+			QSWaitForm->Hide();
+			MessageBox(NULL, "Could not find QS1R! Make sure board is connected and powered up.",
+					"QS1R Load Error",
+					MB_ICONERROR | MB_OK);
+
+			return false;  // board is probably not connected?
+		}
+
+		std::string path = ExtractFilePath(Application->ExeName).c_str( );
+		std::string path_filename = "";
+
+		// LOAD FIRMWARE
+		QSWaitForm->pnlStatus->Caption = "Found QS1R, checking firmware...";
+		QSWaitForm->Update();
+		Sleep(500);
+
+		if ( readFwSn() != ID_FWWR )
+		{
+			QSWaitForm->pnlStatus->Caption = "Found QS1R, loading firmware...";
+			QSWaitForm->Update();
+			
+			path_filename.append( path );
+			path_filename.append( QS1R_FIRMWARE_VER );
+			if ( loadFirmware( path_filename.c_str( ) ) == -1)
+			{
+				QSWaitForm->Hide();
+				const char * errmsg = get_last_error( );
+				MessageBox(NULL, errmsg,
+						"Could not load QS1R firmware!",
+						MB_ICONERROR | MB_OK);
+				return false;
+			}
+
+			QSWaitForm->pnlStatus->Caption = "Firmware loaded... reinit...";
+			QSWaitForm->Update();
+
+			Sleep(4000);   // delay for reenumeration
+
+			if ( findQsDevice( ) == -1 ) // try to initialize board again
+			{
+				QSWaitForm->Hide();
+				MessageBox(NULL, "Could not find QS1R! ",
+					"QS1R Load Error",
+					MB_ICONERROR | MB_OK);
+				return false;  // board is probably not connected or firmware not loaded?
+			}
+		}
+
+		QSWaitForm->pnlStatus->Caption = "Found QS1R...";
+		QSWaitForm->Update();
+		Sleep(100);
+
+		if ( readMultibusInt( MB_ID_REG ) != ID_1RXWR ) // is FPGA loaded with proper file?
+		{
+			QSWaitForm->pnlStatus->Caption = "Loading QS1R FPGA... Please wait...";
+			QSWaitForm->Update();
+			path_filename.clear( );
+			path_filename.append( path );
+			path_filename.append( QS1R_FPGA_VER );
+			if ( loadFpga( path_filename.c_str( ) ) == -1 ) {
+				QSWaitForm->Hide();
+				const char * errmsg = get_last_error( );
+				MessageBox(NULL, "Could not load QS1R Fpga!",
+					errmsg,
+					MB_ICONERROR | MB_OK);
+				return false;  // can't find rbf file?
+			}
+		}
+
+		QSWaitForm->pnlStatus->Caption = "QS1R FPGA is loaded...";
+		QSWaitForm->Update();
+		Sleep(500);
+		QSWaitForm->Hide();
+		delete QSWaitForm;
+		first = false;
+	}
+
+	MB_CONTROL1_BR = 0x3;
+	
+	writeMultibusInt( MB_CONTRL1, 0x80000000 );
+	Sleep( 10 );
+	writeMultibusInt( MB_CONTRL1, MB_CONTROL1_BR );
+
+	qsformmain = new Tqsformmain(NULL);
+	// Make form stay on top
+	SetWindowPos(qsformmain->Handle,
+				HWND_TOPMOST,
+				0, 0, 0, 0,
+				SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+	qsformmain->BringToFront();
+	qsformmain->Visible = true;
+	qsformmain->Update();
+
+	return true;
+}
+
+extern "C"
+__declspec(dllexport) int __stdcall StartHW(long freq)
+{
+	int frequency;
+
+	LOfreq = (double)freq;
+	frequency = (int)((LOfreq) / ( 125e6 + (double)qsformmain->clockcorrection ) * 4294967296.0);
+	writeMultibusInt(MB_FREQRX0_REG, frequency);
+	stop_thread = 0;
+	hndl = (HANDLE) _beginthread( ThreadProc, 0, NULL );
+	SetThreadPriority(hndl, THREAD_PRIORITY_TIME_CRITICAL);
+	return BLOCKSZ; 
+}
+
+extern "C"
+__declspec(dllexport) int __stdcall GetStatus()
+{
+    return 0;
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall StopHW()
+{
+	stop_thread = 1;
+	WaitForSingleObject(hndl,INFINITE);
+    return;
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall CloseHW()
+{
+	qs1rio_close();
+	delete qsformmain;
+    return;
+}
+
+extern "C"
+__declspec(dllexport) int __stdcall SetHWLO(long freq)
+{
+	LOfreq = (double)freq;
+	int frequency = (int)((LOfreq ) / ( 125e6 + (double)qsformmain->clockcorrection ) * 4294967296.0);
+	writeMultibusInt(MB_FREQRX0_REG, frequency);
+    return 0;
+}
+
+extern "C"
+__declspec(dllexport) long __stdcall GetHWLO()
+{
+	return (long)LOfreq;
+}
+
+extern "C"
+__declspec(dllexport) long __stdcall GetHWSR()
+{
+	long sr;
+
+	sr = (long)(qsformmain->samplerate);
+
+	return sr;   
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall IFLimitsChanged(long low, long high)
+{
+    return;
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall TuneChanged(long freq)
+{
+    return;
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall SetCallback(void (* myCallBack)(int, int, float, void *))
+{
+	WinradCallBack = myCallBack;
+    return;
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall ShowGUI()
+{
+	qsformmain->Show();
+	qsformmain->WindowState =  wsNormal;
+	return;
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall HideGUI()
+{
+	if (qsformmain->allow_hide) {
+		qsformmain->Hide();
+	}
+	return;
+}
+
+extern "C"
+__declspec(dllexport) void __stdcall RawDataReady(long samprate, int *Ldata, int *Rdata, int numsamples)
+{
+    return;
+}
+
+void ThreadProc(void * param)
+{
+	int length = BLOCKSZ * sizeof(int) * 2;
+	unsigned char * buffer_c = new unsigned char[length];
+
+	int i,j;
+	int frequency;
+	double clkcorrection = 0.0;
+	bool update;
+
+	while (!stop_thread)
+	{
+		update = qsformmain->need_freq_update;
+		clkcorrection = qsformmain->clockcorrection;
+
+		if ( qsformmain->samplerate != qsformmain->old_rate ) {
+			writeMultibusInt(MB_SAMPLERATE, qsformmain->samplerate);
+			qsformmain->old_rate = qsformmain->samplerate;
+			WinradCallBack(-1, 100, 0, NULL);
+		}
+		else if ( update ) {
+			frequency = (int)((LOfreq) / ( 125e6 + clkcorrection ) * 4294967296.0);
+			writeMultibusInt( MB_FREQRX0_REG, frequency );
+			WinradCallBack( -1, 101, 0, NULL );
+			qsformmain->need_freq_update = false;
+		}
+		else if ( readEP6( buffer_c, length ) == length )
+		{
+			WinradCallBack( BLOCKSZ, 0, 0, (int *)buffer_c );
+		}
+		else
+		{
+			MessageBox(NULL, "Cannot read from QS1R. Stopping...",
+					"QS1R Read Error",
+					MB_ICONERROR | MB_OK);
+					stop_thread = true;
+        }
+	}
+	delete[] buffer_c;
+	_endthread();
+}
+
+//---------------------------------------------------------------------------

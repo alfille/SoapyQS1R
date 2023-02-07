@@ -1,0 +1,66 @@
+object qsformmain: Tqsformmain
+  Left = 0
+  Top = 0
+  BorderIcons = [biSystemMenu]
+  BorderStyle = bsSingle
+  Caption = 'QS1R'
+  ClientHeight = 115
+  ClientWidth = 209
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  PixelsPerInch = 96
+  TextHeight = 13
+  object Label1: TLabel
+    Left = 8
+    Top = 8
+    Width = 64
+    Height = 13
+    Caption = 'Sample Rate:'
+  end
+  object cbSampleRate: TComboBox
+    Left = 88
+    Top = 8
+    Width = 113
+    Height = 21
+    ItemHeight = 0
+    TabOrder = 0
+    Text = 'cbSampleRate'
+    OnChange = cbSampleRateChange
+  end
+  object chkPGA: TCheckBox
+    Left = 8
+    Top = 35
+    Width = 64
+    Height = 17
+    Caption = 'PGA'
+    Checked = True
+    State = cbChecked
+    TabOrder = 1
+    OnClick = chkPGAClick
+  end
+  object chkRAND: TCheckBox
+    Left = 8
+    Top = 51
+    Width = 75
+    Height = 17
+    Caption = 'RAND'
+    Checked = True
+    State = cbChecked
+    TabOrder = 2
+    OnClick = chkRANDClick
+  end
+  object chkDITH: TCheckBox
+    Left = 8
+    Top = 66
+    Width = 73
+    Height = 17
+    Caption = 'DITH'
+    TabOrder = 3
+    OnClick = chkDITHClick
+  end
+end
