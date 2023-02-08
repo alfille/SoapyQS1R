@@ -13,5 +13,7 @@ SoapySDR driver for the QS1R radio -- a software defined radio in the HF frequen
 * qs_io.py: A simple example code openly provided by the QS1R designer, Phil Covington.
 * QS1R API documentation describing the USB interface and the device configuration fields.
 
-## C vs C++
-SoapySDR and it's drivers are C++ ocde. The HackRF uses drivers from HackRF project written in C. Since that is a more familiar platform for me, we'll match that interface.
+## C++ cmake
+* SoapySDR and it's drivers are C++ code.
+* Soapy drivers require SoapySDR (dev version) 
+* USB requires libusb-1.0 dev version
