@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2023 Paul H Alfille
+ * Copyright (c) 2023 Paul H Alfille -- after SoapyQS1R example
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -107,9 +107,65 @@ typedef enum {
 // can reduce numerator and denominator by 64
 #define DDC_FREQ( freq_hz ) ( (freq_hz)* 67108864 / 1953125 ) 
 
+#define FX2_RAM_RESET			0xE600
+#define FX2_WRITE_RAM_REQ		0xA0 
+
+/* Vendor Request Types */
+#define VRT_VENDOR_IN			0xC0
+#define VRT_VENDOR_OUT			0x40
+
+/* Vendor In Commands */
+#define	VRQ_I2C_READ			0x81	// wValueL: i2c address; length: how much to read
+#define	VRQ_SPI_READ			0x82	// wValue: optional header bytes
+// wIndexH:	enables
+// wIndexL:	format
+// len: how much to read
+
+#define VRQ_SN_READ     		0x83
+
+#define VRQ_EEPROM_TYPE_READ	0x84
+#define VRQ_I2C_SPEED_READ		0x85
+#define VRQ_MULTI_READ			0x86
+#define VRQ_DEBUG_READ			0x87
+
+/* Vendor Out Commands */
+#define VRQ_FPGA_LOAD			0x02
+#define FL_BEGIN				0
+#define FL_XFER					1
+#define FL_END					2
+
+#define VRQ_FPGA_SET_RESET		0x04	// wValueL: {0,1}
+#define VRQ_MULTI_WRITE			0x05
+#define VRQ_REQ_I2C_WRITE  		0x08	// wValueL: i2c address; data: data
+#define VRQ_REQ_SPI_WRITE 		0x09	// wValue: optional header bytes
+// wIndexH:	enables
+// wIndexL:	format
+// len: how much to write
+
+#define VRQ_I2C_SPEED_SET  		0x0B  	// wValueL: {0,1}
+#define VRQ_CPU_SPEED_SET		0x0C 	// wValueL: {0, 1, 2}
+#define VRQ_EP_RESET			0x0D
+
+#define USB_TIMEOUT_CONTROL		500
+#define USB_TIMEOUT_BULK		1000
+
+#define MAX_EP0_PACKET_SIZE		64
+#define MAX_EP4_PACKET_SIZE		1024
 
 // USB
 extern libusb_context * qs1r_context ;
+
+// EndPoint 2 output
+#define QS1R_EP2 0x02
+
+// EndPoint 4 output
+#define QS1R_EP4 0x04
+
+// EndPoint 6 input
+#define QS1R_EP6 0x86
+
+// EndPoint 8 input
+#define QS1R_EP8 0x88
 
 #define QS1R_PID 0x0008
 #define QS1R_VID 0xFFFE
@@ -128,12 +184,12 @@ public:
 	~SoapyQS1RSession(void);
 };
 
-class SoapyHackRF : public SoapySDR::Device
+class SoapyQS1R : public SoapySDR::Device
 {
 public:
-	SoapyHackRF( const SoapySDR::Kwargs & args );
+	SoapyQS1R( const SoapySDR::Kwargs & args );
 
-	~SoapyHackRF( void );
+	~SoapyQS1R( void );
 
 
 	/*******************************************************************
@@ -368,7 +424,7 @@ private:
 		Stream(): opened(false), buf_num(BUF_NUM), buf_len(BUF_LEN), buf(nullptr),
 				  buf_head(0), buf_tail(0), buf_count(0),
 				  remainderHandle(-1), remainderSamps(0), remainderOffset(0), remainderBuff(nullptr),
-				  format(HACKRF_FORMAT_INT8) {}
+				  format(QS1R_FORMAT_INT8) {}
 
 		bool opened;
 		uint32_t	buf_num;

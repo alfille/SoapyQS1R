@@ -1,8 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2015 Wei Jiang
- * Copyright (c) 2015-2017 Josh Blum
+ * Copyright (c) 2023 Paul H Alfille -- after SoapyQS1R example
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -21,9 +20,9 @@
  */
 
 #include "SoapyQS1R.hpp"
-#include <SoapySDR/Registry.hpp>
 
 static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
+
 
 static std::vector<SoapySDR::Kwargs> find_QS1R(const SoapySDR::Kwargs &args)
 {
@@ -34,6 +33,23 @@ static std::vector<SoapySDR::Kwargs> find_QS1R(const SoapySDR::Kwargs &args)
 	hackrf_device_list_t *list;
 
 	list =hackrf_device_list();
+
+	libusb_device ** devs ;
+	ssize_t usb_count = libusb_get_device_list( qs1r_context, &devs ) ;
+
+	if ( usb_count > 0 ) {
+		for ( auto i =0 ; i < usb_count ; ++i ) {
+			struct libusb_device_descriptor desc ;
+			if ( libusb_get_device_descriptor( devs[i], &desc ) >= 0 ) {
+				if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
+					libusb_device_handle * dev ;
+					if ( libusb_open( devs[i], &dev ) == 0 ) {
+					}
+				}
+			}
+		}
+	}
+	libusb_free_device_list( devs, 1 ) ;
 
 	if (list->devicecount > 0) {
 	
@@ -111,7 +127,7 @@ static std::vector<SoapySDR::Kwargs> find_QS1R(const SoapySDR::Kwargs &args)
 
 static SoapySDR::Device *make_HackRF(const SoapySDR::Kwargs &args)
 {
-    return new SoapyHackRF(args);
+    return new SoapyQS1R(args);
 }
 
-static SoapySDR::Registry register_hackrf("hackrf", &find_QS1R, &make_HackRF, SOAPY_SDR_ABI_VERSION);
+static SoapySDR::Registry register_qs1r("qs1r", &find_QS1R, &make_HackRF, SOAPY_SDR_ABI_VERSION);

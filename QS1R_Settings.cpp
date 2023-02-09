@@ -1,9 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2015-2016 Wei Jiang
- * Copyright (c) 2015-2017 Josh Blum
- * Copyright (c) 2017 Kevin Mehall
+ * Copyright (c) 2023 Paul H Alfille -- after SoapyQS1R example
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -21,7 +19,7 @@
  * THE SOFTWARE.
  */
 
-#include "SoapyHackRF.hpp"
+#include "SoapyQS1R.hpp"
 
 std::set<std::string> &HackRF_getClaimedSerials(void)
 {
@@ -29,7 +27,7 @@ std::set<std::string> &HackRF_getClaimedSerials(void)
 	return serials;
 }
 
-SoapyHackRF::SoapyHackRF( const SoapySDR::Kwargs &args )
+SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args )
 {
 	if (args.count("label") != 0)
 		SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
@@ -80,7 +78,7 @@ SoapyHackRF::SoapyHackRF( const SoapySDR::Kwargs &args )
 }
 
 
-SoapyHackRF::~SoapyHackRF( void )
+SoapyQS1R::~SoapyQS1R( void )
 {
 	HackRF_getClaimedSerials().erase(_serial);
 
@@ -97,14 +95,14 @@ SoapyHackRF::~SoapyHackRF( void )
  * Identification API
  ******************************************************************/
 
-std::string SoapyHackRF::getDriverKey( void ) const
+std::string SoapyQS1R::getDriverKey( void ) const
 {
 
 	return("HackRF");
 }
 
 
-std::string SoapyHackRF::getHardwareKey( void ) const
+std::string SoapyQS1R::getHardwareKey( void ) const
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	uint8_t board_id=BOARD_ID_INVALID;
@@ -115,7 +113,7 @@ std::string SoapyHackRF::getHardwareKey( void ) const
 }
 
 
-SoapySDR::Kwargs SoapyHackRF::getHardwareInfo( void ) const
+SoapySDR::Kwargs SoapyQS1R::getHardwareInfo( void ) const
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	SoapySDR::Kwargs info;
@@ -155,13 +153,13 @@ SoapySDR::Kwargs SoapyHackRF::getHardwareInfo( void ) const
  * Channels API
  ******************************************************************/
 
-size_t SoapyHackRF::getNumChannels( const int dir ) const
+size_t SoapyQS1R::getNumChannels( const int dir ) const
 {
 	return(1);
 }
 
 
-bool SoapyHackRF::getFullDuplex( const int direction, const size_t channel ) const
+bool SoapyQS1R::getFullDuplex( const int direction, const size_t channel ) const
 {
 	return(false);
 }
@@ -170,7 +168,7 @@ bool SoapyHackRF::getFullDuplex( const int direction, const size_t channel ) con
  * Settings API
  ******************************************************************/
 
-SoapySDR::ArgInfoList SoapyHackRF::getSettingInfo(void) const
+SoapySDR::ArgInfoList SoapyQS1R::getSettingInfo(void) const
 {
 	SoapySDR::ArgInfoList setArgs;
 
@@ -185,7 +183,7 @@ SoapySDR::ArgInfoList SoapyHackRF::getSettingInfo(void) const
 	return setArgs;
 }
 
-void SoapyHackRF::writeSetting(const std::string &key, const std::string &value)
+void SoapyQS1R::writeSetting(const std::string &key, const std::string &value)
 {
 	if(key=="bias_tx"){
 		std::lock_guard<std::mutex> lock(_device_mutex);
@@ -200,7 +198,7 @@ void SoapyHackRF::writeSetting(const std::string &key, const std::string &value)
 
 }
 
-std::string SoapyHackRF::readSetting(const std::string &key) const
+std::string SoapyQS1R::readSetting(const std::string &key) const
 {
 	if (key == "bias_tx") {
 		return _tx_stream.bias?"true":"false";
@@ -211,7 +209,7 @@ std::string SoapyHackRF::readSetting(const std::string &key) const
  * Antenna API
  ******************************************************************/
 
-std::vector<std::string> SoapyHackRF::listAntennas( const int direction, const size_t channel ) const
+std::vector<std::string> SoapyQS1R::listAntennas( const int direction, const size_t channel ) const
 {
 	std::vector<std::string> options;
 	options.push_back( "TX/RX" );
@@ -219,13 +217,13 @@ std::vector<std::string> SoapyHackRF::listAntennas( const int direction, const s
 }
 
 
-void SoapyHackRF::setAntenna( const int direction, const size_t channel, const std::string &name )
+void SoapyQS1R::setAntenna( const int direction, const size_t channel, const std::string &name )
 {
 	/* TODO delete this function or throw if name != RX... */
 }
 
 
-std::string SoapyHackRF::getAntenna( const int direction, const size_t channel ) const
+std::string SoapyQS1R::getAntenna( const int direction, const size_t channel ) const
 {
 	return("TX/RX");
 }
@@ -236,7 +234,7 @@ std::string SoapyHackRF::getAntenna( const int direction, const size_t channel )
  ******************************************************************/
 
 
-bool SoapyHackRF::hasDCOffsetMode( const int direction, const size_t channel ) const
+bool SoapyQS1R::hasDCOffsetMode( const int direction, const size_t channel ) const
 {
 	return(false);
 }
@@ -246,7 +244,7 @@ bool SoapyHackRF::hasDCOffsetMode( const int direction, const size_t channel ) c
  * Gain API
  ******************************************************************/
 
-std::vector<std::string> SoapyHackRF::listGains( const int direction, const size_t channel ) const
+std::vector<std::string> SoapyQS1R::listGains( const int direction, const size_t channel ) const
 {
 	std::vector<std::string> options;
 	if ( direction == SOAPY_SDR_RX )
@@ -270,20 +268,20 @@ std::vector<std::string> SoapyHackRF::listGains( const int direction, const size
 }
 
 
-void SoapyHackRF::setGainMode( const int direction, const size_t channel, const bool automatic )
+void SoapyQS1R::setGainMode( const int direction, const size_t channel, const bool automatic )
 {
 	/* enable AGC if the hardware supports it, or remove this function */
 }
 
 
-bool SoapyHackRF::getGainMode( const int direction, const size_t channel ) const
+bool SoapyQS1R::getGainMode( const int direction, const size_t channel ) const
 {
 	return(false);
 	/* ditto for the AGC */
 }
 
 
-void SoapyHackRF::setGain( const int direction, const size_t channel, const double value )
+void SoapyQS1R::setGain( const int direction, const size_t channel, const double value )
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	int32_t ret(0), gain(0);
@@ -347,7 +345,7 @@ void SoapyHackRF::setGain( const int direction, const size_t channel, const doub
 }
 
 
-void SoapyHackRF::setGain( const int direction, const size_t channel, const std::string &name, const double value )
+void SoapyQS1R::setGain( const int direction, const size_t channel, const std::string &name, const double value )
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	SoapySDR_logf(SOAPY_SDR_DEBUG,"setGain %s %s, channel %d, gain %d", name.c_str(), direction == SOAPY_SDR_RX ? "RX" : "TX", channel, (int)value);
@@ -410,7 +408,7 @@ void SoapyHackRF::setGain( const int direction, const size_t channel, const std:
 }
 
 
-double SoapyHackRF::getGain( const int direction, const size_t channel, const std::string &name ) const
+double SoapyQS1R::getGain( const int direction, const size_t channel, const std::string &name ) const
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	double gain = 0.0;
@@ -435,7 +433,7 @@ double SoapyHackRF::getGain( const int direction, const size_t channel, const st
 }
 
 
-SoapySDR::Range SoapyHackRF::getGainRange( const int direction, const size_t channel, const std::string &name ) const
+SoapySDR::Range SoapyQS1R::getGainRange( const int direction, const size_t channel, const std::string &name ) const
 {
 	if ( name == "AMP" )
 		return(SoapySDR::Range( 0, HACKRF_AMP_MAX_DB,  HACKRF_AMP_MAX_DB) );
@@ -453,7 +451,7 @@ SoapySDR::Range SoapyHackRF::getGainRange( const int direction, const size_t cha
  * Frequency API
  ******************************************************************/
 
-void SoapyHackRF::setFrequency( const int direction, const size_t channel, const std::string &name, const double frequency, const SoapySDR::Kwargs &args )
+void SoapyQS1R::setFrequency( const int direction, const size_t channel, const std::string &name, const double frequency, const SoapySDR::Kwargs &args )
 {
 	if ( name == "BB" )
 		return;
@@ -485,7 +483,7 @@ void SoapyHackRF::setFrequency( const int direction, const size_t channel, const
 }
 
 
-double SoapyHackRF::getFrequency( const int direction, const size_t channel, const std::string &name ) const
+double SoapyQS1R::getFrequency( const int direction, const size_t channel, const std::string &name ) const
 {
 	if ( name == "BB" )
 		return(0.0);
@@ -506,14 +504,14 @@ double SoapyHackRF::getFrequency( const int direction, const size_t channel, con
 	return(freq);
 }
 
-SoapySDR::ArgInfoList SoapyHackRF::getFrequencyArgsInfo(const int direction, const size_t channel) const
+SoapySDR::ArgInfoList SoapyQS1R::getFrequencyArgsInfo(const int direction, const size_t channel) const
 {
 	SoapySDR::ArgInfoList freqArgs;
 	// TODO: frequency arguments
 	return freqArgs;
 }
 
-std::vector<std::string> SoapyHackRF::listFrequencies( const int direction, const size_t channel ) const
+std::vector<std::string> SoapyQS1R::listFrequencies( const int direction, const size_t channel ) const
 {
 	std::vector<std::string> names;
 	names.push_back( "RF" );
@@ -521,7 +519,7 @@ std::vector<std::string> SoapyHackRF::listFrequencies( const int direction, cons
 }
 
 
-SoapySDR::RangeList SoapyHackRF::getFrequencyRange( const int direction, const size_t channel, const std::string &name ) const
+SoapySDR::RangeList SoapyQS1R::getFrequencyRange( const int direction, const size_t channel, const std::string &name ) const
 {
 	if ( name == "BB" )
 		return(SoapySDR::RangeList( 1, SoapySDR::Range( 0.0, 0.0 ) ) );
@@ -535,7 +533,7 @@ SoapySDR::RangeList SoapyHackRF::getFrequencyRange( const int direction, const s
  * Sample Rate API
  ******************************************************************/
 
-void SoapyHackRF::setSampleRate( const int direction, const size_t channel, const double rate )
+void SoapyQS1R::setSampleRate( const int direction, const size_t channel, const double rate )
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	_current_samplerate = rate;
@@ -562,7 +560,7 @@ void SoapyHackRF::setSampleRate( const int direction, const size_t channel, cons
 }
 
 
-double SoapyHackRF::getSampleRate( const int direction, const size_t channel ) const
+double SoapyQS1R::getSampleRate( const int direction, const size_t channel ) const
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	double samp(0.0);
@@ -579,7 +577,7 @@ double SoapyHackRF::getSampleRate( const int direction, const size_t channel ) c
 }
 
 
-std::vector<double> SoapyHackRF::listSampleRates( const int direction, const size_t channel ) const
+std::vector<double> SoapyQS1R::listSampleRates( const int direction, const size_t channel ) const
 {
 	std::vector<double> options;
 	for ( double r = 1e6; r <= 20e6; r += 1e6 )
@@ -590,7 +588,7 @@ std::vector<double> SoapyHackRF::listSampleRates( const int direction, const siz
 }
 
 
-void SoapyHackRF::setBandwidth( const int direction, const size_t channel, const double bw )
+void SoapyQS1R::setBandwidth( const int direction, const size_t channel, const double bw )
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	_current_bandwidth = bw;
@@ -624,7 +622,7 @@ void SoapyHackRF::setBandwidth( const int direction, const size_t channel, const
 }
 
 
-double SoapyHackRF::getBandwidth( const int direction, const size_t channel ) const
+double SoapyQS1R::getBandwidth( const int direction, const size_t channel ) const
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
 	double bw(0.0);
@@ -641,7 +639,7 @@ double SoapyHackRF::getBandwidth( const int direction, const size_t channel ) co
 }
 
 
-std::vector<double> SoapyHackRF::listBandwidths( const int direction, const size_t channel ) const
+std::vector<double> SoapyQS1R::listBandwidths( const int direction, const size_t channel ) const
 {
 	std::vector<double> options;
 	options.push_back( 1750000 );

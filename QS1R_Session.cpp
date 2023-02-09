@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2015 Josh Blum
+ * Copyright (c) 2023 Paul H Alfille -- after SoapyQS1R example
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -51,5 +51,6 @@ SoapyQS1RSession::~SoapyQS1RSession(void)
     if (sessionCount == 0)
     {
         libusb_exit( qs1r_context ) ;
+        qs1r_context = NULL ;
     }
 }
