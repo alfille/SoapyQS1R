@@ -21,7 +21,7 @@ message(STATUS "LIBUSB_INCLUDE_DIRS - ${LIBUSB_INCLUDE_DIRS}")
 message(STATUS "LIBUSB_LIBRARIES - ${LIBUSB_LIBRARIES}")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-include_directories(${LIBHACKRF_INCLUDE_DIRS})
+include_directories(${LIBUSB_INCLUDE_DIRS})
 
 #enable c++11 features
 if(CMAKE_COMPILER_IS_GNUCXX)

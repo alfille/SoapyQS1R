@@ -19,40 +19,37 @@
  * THE SOFTWARE.
  */
 
-#include "SoapyHackRF.hpp"
+#include "SoapyQS1R.hpp"
 #include <SoapySDR/Logger.hpp>
 #include <mutex>
 #include <cstddef>
 
 static std::mutex sessionMutex;
 static size_t sessionCount = 0;
+static libusb_context * qs1r_context = NULL;
 
-SoapyHackRFSession::SoapyHackRFSession(void)
+SoapyQS1RSession::SoapyQS1RSession(void)
 {
     std::lock_guard<std::mutex> lock(sessionMutex);
 
     if (sessionCount == 0)
     {
-        int ret = hackrf_init();
-        if (ret != HACKRF_SUCCESS)
-        {
-            SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_init() failed -- %s", hackrf_error_name(hackrf_error(ret)));
+        // libusb
+        int usb_ret = libusb_init(&qs1r_context);
+        if ( usb_ret != 0 ) {
+            SoapySDR::logf(SOAPY_SDR_ERROR, "qs1r_init() failed -- %s", libusb_strerr(usb_ret));
         }
     }
     sessionCount++;
 }
 
-SoapyHackRFSession::~SoapyHackRFSession(void)
+SoapyQS1RSession::~SoapyQS1RSession(void)
 {
     std::lock_guard<std::mutex> lock(sessionMutex);
 
     sessionCount--;
     if (sessionCount == 0)
     {
-        int ret = hackrf_exit();
-        if (ret != HACKRF_SUCCESS)
-        {
-            SoapySDR::logf(SOAPY_SDR_ERROR, "hackrf_exit() failed -- %s", hackrf_error_name(hackrf_error(ret)));
-        }
+        libusb_exit( qs1r_context ) ;
     }
 }

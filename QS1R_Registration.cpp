@@ -20,14 +20,14 @@
  * THE SOFTWARE.
  */
 
-#include "SoapyHackRF.hpp"
+#include "SoapyQS1R.hpp"
 #include <SoapySDR/Registry.hpp>
 
 static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
 
-static std::vector<SoapySDR::Kwargs> find_HackRF(const SoapySDR::Kwargs &args)
+static std::vector<SoapySDR::Kwargs> find_QS1R(const SoapySDR::Kwargs &args)
 {
-	SoapyHackRFSession Sess;
+	SoapyQS1RSession Sess;
 
 	std::vector<SoapySDR::Kwargs> results;
 
@@ -114,4 +114,4 @@ static SoapySDR::Device *make_HackRF(const SoapySDR::Kwargs &args)
     return new SoapyHackRF(args);
 }
 
-static SoapySDR::Registry register_hackrf("hackrf", &find_HackRF, &make_HackRF, SOAPY_SDR_ABI_VERSION);
+static SoapySDR::Registry register_hackrf("hackrf", &find_QS1R, &make_HackRF, SOAPY_SDR_ABI_VERSION);

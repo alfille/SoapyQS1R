@@ -26,6 +26,7 @@
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Logger.hpp>
 #include <set>
+#include <libusb.h>
 
 #define BUF_LEN			262144
 #define BUF_NUM			15
@@ -49,15 +50,82 @@ typedef enum {
 
 std::set<std::string> &HackRF_getClaimedSerials(void);
 
+#define DDC_VERSION_REG 0x00
+
+#define DDC_CONTROL_REG0 0x01
+typedef enum {
+	DAC_BYPASS, //1=bypass DAC audio
+	DAC_EXT_MUTE_ENABLE, //1=mute external input
+	WB_BYPASS, // 1=wide-band bypass (data on EP8)
+	DAC_CLOCK_SELECT, // 0=24kSPS 1=48kSPS
+	MASTER_RESET = 31,
+} DDC_CONTROL0 ;
+
+#define DDC_CONTROL_REG1 0x02
+typedef enum {
+	ADC_PGA_GAIN, // 0=low, 1=high
+	ADC_RANDOMIZER_ENABLE,
+	ADC_DITHER_ENABLE,
+} DDC_CONTROL1 ;
+
+#define DDC_SAMPLE_RATE_REG 0x03
+typedef enum {
+	BW20k = 25000,
+	BW40k = 50000,
+	BW100k = 125000,
+	BW200k = 250000,
+	BW500k = 625000,
+	BW1_0m = 1250000,
+	BW1_2m = 1562500,
+	BW2_0m = 2500000,
+} DDC_SAMPLE_RATE ;
+
+#define GPIO_CONTROL_REG 0x04
+// bits 0-14
+// 1=input, 0=output
+
+#define GPIO_STATE_REG 0x05
+// bits 0-14
+
+#define RFB_CONTROL_REG 0x06
+// bits 0-11
+// 1=input, 0=output
+
+#define RFB_STATE_REG 0x07
+// bits 0-11
+
+#define EXT_CONTROL_REG 0x08
+// bits 0-19
+// 1=input, 0=output
+
+#define EXT_STATE_REG 0x09
+// bits 0-19
+
+#define DDC_FREQ_REG 0x0A
+//#define DDC_FREQ( freq_hz ) ( (freq_hz)* 4294967296 / 125000000 )
+// 2^32 * freq / 125M (clock freq)
+// can reduce numerator and denominator by 64
+#define DDC_FREQ( freq_hz ) ( (freq_hz)* 67108864 / 1953125 ) 
+
+
+// USB
+extern libusb_context * qs1r_context ;
+
+#define QS1R_PID 0x0008
+#define QS1R_VID 0xFFFE
+
+#define FX2LP_PID 0x8613
+#define FX2LP_VID 0x04B4
+
 /*!
- * The session object manages hackrf_init/exit
+ * The session object manages qs1r_init/exit
  * with a process-wide reference count.
  */
-class SoapyHackRFSession
+class SoapyQS1RSession
 {
 public:
-	SoapyHackRFSession(void);
-	~SoapyHackRFSession(void);
+	SoapyQS1RSession(void);
+	~SoapyQS1RSession(void);
 };
 
 class SoapyHackRF : public SoapySDR::Device
@@ -372,5 +440,5 @@ private:
 
 	HackRF_transceiver_mode_t _current_mode;
 
-	SoapyHackRFSession _sess;
+	SoapyQS1RSession _sess;
 };
