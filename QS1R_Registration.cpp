@@ -24,110 +24,63 @@
 static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
 
 
-static std::vector<SoapySDR::Kwargs> find_QS1R(const SoapySDR::Kwargs &args)
+static std::vector<SoapySDR::Kwargs> findQS1R(const SoapySDR::Kwargs &args)
 {
-	SoapyQS1RSession Sess;
+    SoapyQS1RSession Sess;
 
-	std::vector<SoapySDR::Kwargs> results;
+    std::vector<SoapySDR::Kwargs> results;
 
-	hackrf_device_list_t *list;
+    libusb_device ** devlist ;
+    ssize_t usb_count = libusb_get_device_list( qs1r_context, &devlist ) ;
 
-	list =hackrf_device_list();
+    if ( usb_count > 0 ) {
+        for ( auto i =0 ; i < usb_count ; ++i ) {
+            struct libusb_device_descriptor desc ;
+            libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
+            if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
+                libusb_device_handle * dev ;
+                if ( libusb_open( devlist[i], &dev ) == 0 ) {
+                    if ( QS1R_initialize_device( dev ) ) {
+                        // USB configured
+                        // hex code uploaded
+                        // FPGA loaded
 
-	libusb_device ** devs ;
-	ssize_t usb_count = libusb_get_device_list( qs1r_context, &devs ) ;
+                        // Set description fields
+                        SoapySDR::Kwargs devInfo;
 
-	if ( usb_count > 0 ) {
-		for ( auto i =0 ; i < usb_count ; ++i ) {
-			struct libusb_device_descriptor desc ;
-			if ( libusb_get_device_descriptor( devs[i], &desc ) >= 0 ) {
-				if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
-					libusb_device_handle * dev ;
-					if ( libusb_open( devs[i], &dev ) == 0 ) {
-					}
-				}
-			}
-		}
-	}
-	libusb_free_device_list( devs, 1 ) ;
+                        unsigned char adevice[256] ;
+                        libusb_get_string_descriptor_ascii( dev, desc.iProduct, adevice, 256 ) ;
+                        devInfo["product"] = (char *) adevice ;
 
-	if (list->devicecount > 0) {
-	
-		for (int i = 0; i < list->devicecount; i++) {
-		
-			hackrf_device* device = NULL;
-			uint8_t board_id = BOARD_ID_INVALID;
-			read_partid_serialno_t read_partid_serialno;
+                        unsigned char aserial[256] ;
+                        libusb_get_string_descriptor_ascii( dev, desc.iSerialNumber, aserial, 256 ) ;
+                        devInfo["serial"] = (char *) aserial;
 
-			hackrf_device_list_open(list, i, &device);
+                        unsigned char amanf[256] ;
+                        libusb_get_string_descriptor_ascii( dev, desc.iManufacturer, amanf, 256 ) ;
+                        devInfo["manufacturer"] = (char *) amanf;
 
-			SoapySDR::Kwargs options;
+                        char alabel[256] ;
+                        sprintf( alabel, "QS1R %s on <%d:%d>", aserial, libusb_get_bus_number(devlist[i]), libusb_get_port_number(devlist[i]) );
+                        devInfo["label"] = alabel ;
 
-			if (device!=NULL) {
+                        // filter for serial
+                        if (args.count("serial") != 0 and args.at("serial") != (char *) aserial) continue;
 
-				hackrf_board_id_read(device, &board_id);
+                        results.push_back(devInfo) ;
+                    }
+                }
+            }
+        }
+    }
+    libusb_free_device_list( devlist, 1 ) ;
 
-				options["device"] = hackrf_board_id_name((hackrf_board_id) board_id);
-
-				char version_str[100];
-
-				hackrf_version_string_read(device, &version_str[0], 100);
-
-				options["version"] = version_str;
-
-				hackrf_board_partid_serialno_read(device, &read_partid_serialno);
-
-				char part_id_str[100];
-
-				sprintf(part_id_str, "%08x%08x", read_partid_serialno.part_id[0], read_partid_serialno.part_id[1]);
-
-				options["part_id"] = part_id_str;
-
-				char serial_str[100];
-				sprintf(serial_str, "%08x%08x%08x%08x", read_partid_serialno.serial_no[0],
-						read_partid_serialno.serial_no[1], read_partid_serialno.serial_no[2],
-						read_partid_serialno.serial_no[3]);
-				options["serial"] = serial_str;
-
-				//generate a displayable label string with trimmed serial
-				size_t ofs = 0;
-				while (ofs < sizeof(serial_str) and serial_str[ofs] == '0') ofs++;
-				char label_str[100];
-				sprintf(label_str, "%s #%d %s", options["device"].c_str(), i, serial_str+ofs);
-				options["label"] = label_str;
-
-				//filter based on serial and idx
-				const bool serialMatch = args.count("serial") == 0 or args.at("serial") == options["serial"];
-				const bool idxMatch = args.count("hackrf") == 0 or std::stoi(args.at("hackrf")) == i;
-				if (serialMatch and idxMatch)
-				{
-					results.push_back(options);
-					_cachedResults[serial_str] = options;
-				}
-
-				hackrf_close(device);
-			}
-		
-		}
-	
-	}
-
-	hackrf_device_list_free(list);
-
-	//fill in the cached results for claimed handles
-	for (const auto &serial : HackRF_getClaimedSerials())
-	{
-		if (_cachedResults.count(serial) == 0) continue;
-		if (args.count("serial") != 0 and args.at("serial") != serial) continue;
-		results.push_back(_cachedResults.at(serial));
-	}
-
-	return results;
+    return results;
 }
 
-static SoapySDR::Device *make_HackRF(const SoapySDR::Kwargs &args)
+static SoapySDR::Device *makeQS1R(const SoapySDR::Kwargs &args)
 {
     return new SoapyQS1R(args);
 }
 
-static SoapySDR::Registry register_qs1r("qs1r", &find_QS1R, &make_HackRF, SOAPY_SDR_ABI_VERSION);
+static SoapySDR::Registry registerQS1R("qs1r", &findQS1R, &makeQS1R, SOAPY_SDR_ABI_VERSION);

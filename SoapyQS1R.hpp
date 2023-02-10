@@ -24,6 +24,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <SoapySDR/Device.hpp>
+#include <SoapySDR/Registry.hpp>
 #include <SoapySDR/Logger.hpp>
 #include <set>
 #include <libusb.h>
@@ -172,6 +173,9 @@ extern libusb_context * qs1r_context ;
 
 #define FX2LP_PID 0x8613
 #define FX2LP_VID 0x04B4
+
+/* Utilities prototypes */
+bool QS1R_initialize_device( libusb_device_handle * dev ) ;
 
 /*!
  * The session object manages qs1r_init/exit
@@ -475,7 +479,7 @@ private:
 
 	bool _auto_bandwidth;
 
-	hackrf_device * _dev;
+	//hackrf_device * _dev;
 	std::string _serial;
 
 	uint64_t _current_frequency;
