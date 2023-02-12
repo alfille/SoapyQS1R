@@ -21,17 +21,79 @@
 
 #include "SoapyQS1R.hpp"
 
-std::set<std::string> &HackRF_getClaimedSerials(void)
-{
-	static std::set<std::string> serials;
-	return serials;
+/* Open a SQ1R by matching a string "serial nmumber" obtained in QS1Rfind */
+/* Assumes serial is a null terminated string*/
+/* NULL on failure */
+libusb_device_handle * qs1r_by_serial( const char * serial ) {
+	if ( strlen( serial ) == 0 ) {
+		return NULL ;
+	}
+
+	libusb_device_handle * dev = NULL ;
+    libusb_device ** devlist ;
+    ssize_t usb_count = libusb_get_device_list( qs1r_context, &devlist ) ;
+
+	for ( auto i =0 ; i < usb_count ; ++i ) {
+		struct libusb_device_descriptor desc ;
+		libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
+		if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
+			if ( libusb_open( devlist[i], &dev ) == 0 ) {
+				unsigned char aserial[256] ;
+				libusb_get_string_descriptor_ascii( dev, desc.iSerialNumber, aserial, 256 ) ;
+				if ( strcmp( (char *) aserial, serial) == 0 ) {
+					break ;
+				} else { 
+					libusb_close( dev ) ;
+					dev = NULL ;
+				} 
+			}
+		}
+	}
+    libusb_free_device_list( devlist, 1 ) ;
+    return dev ;
 }
 
-SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args )
+/* Open the "index" number QS1R device */
+/* Uses atoi to get the number from the "index" string" */
+/* NULL on failure */
+libusb_device_handle * qs1r_by_index( const char * index ) {
+	int target = atoi( index ) ;
+	int idx = 0 ;
+    libusb_device ** devlist ;
+    ssize_t usb_count = libusb_get_device_list( qs1r_context, &devlist ) ;
+
+	for ( auto i =0 ; i < usb_count ; ++i ) {
+		struct libusb_device_descriptor desc ;
+		libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
+		if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
+			if ( idx == target ) {
+				libusb_device_handle * dev ;
+				libusb_open( devlist[i], &dev ) ;
+				libusb_free_device_list( devlist, 1 ) ;
+				return dev ;
+			}
+			++ idx ;
+		}
+	}
+    libusb_free_device_list( devlist, 1 ) ;
+    return NULL ;
+}
+
+SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
+	/* Default (startup) state */
+
+	_sample_rate(50e3),
+	_bandwidth(40e3),
+
+	_RX_FREQ(0.0),
+	_freq_corr(0.0),
+	_antenna("RX BNC LPF")
 {
+
 	if (args.count("label") != 0)
 		SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
 
+/*
 	_rx_stream.vga_gain=16;
 	_rx_stream.lna_gain=16;
 	_rx_stream.amp_gain=0;
@@ -52,39 +114,28 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args )
 	_current_mode=HACKRF_TRANSCEIVER_MODE_OFF;
 
 	_auto_bandwidth=true;
+*/
 
-	_dev		= nullptr;
-
+	/* Open the QS1R by matching serial number or index */
 	if (args.count("serial") == 0)
-		throw std::runtime_error("no hackrf device matches");
+		throw std::runtime_error("no QS1r device matches");
 	_serial = args.at("serial");
 
-	_current_amp = 0;
-
-	_current_frequency = 0;
-
-	_current_samplerate = 0;
-
-	_current_bandwidth=0;
-
-	int ret = hackrf_open_by_serial(_serial.c_str(), &_dev);
-	if ( ret != HACKRF_SUCCESS )
+	_dev = qs1r_by_serial(_serial.c_str());
+	if ( _dev == NULL )
 	{
-		SoapySDR_logf( SOAPY_SDR_INFO, "Could not Open HackRF Device" );
-		throw std::runtime_error("hackrf open failed");
+		_dev = qs1r_by_index( args.at("index").c_str()) ;
+		if ( _dev == NULL ) {
+			throw std::runtime_error("no QS1r device matches");
+		}
 	}
-
-	HackRF_getClaimedSerials().insert(_serial);
 }
-
 
 SoapyQS1R::~SoapyQS1R( void )
 {
-	HackRF_getClaimedSerials().erase(_serial);
-
 	if ( _dev )
 	{
-		hackrf_close( _dev );
+		libusb_close( _dev );
 	}
 
 	/* cleanup device handles */
@@ -97,52 +148,23 @@ SoapyQS1R::~SoapyQS1R( void )
 
 std::string SoapyQS1R::getDriverKey( void ) const
 {
-
-	return("HackRF");
+	return("QS1R");
 }
 
 
 std::string SoapyQS1R::getHardwareKey( void ) const
 {
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	uint8_t board_id=BOARD_ID_INVALID;
-
-	hackrf_board_id_read(_dev,&board_id);
-
-	return(hackrf_board_id_name((hackrf_board_id)board_id));
+	return "LTC2208" ;
 }
 
 
 SoapySDR::Kwargs SoapyQS1R::getHardwareInfo( void ) const
 {
-	std::lock_guard<std::mutex> lock(_device_mutex);
 	SoapySDR::Kwargs info;
 
-	char version_str[100];
-
-	hackrf_version_string_read(_dev, &version_str[0], 100);
-
-	info["version"] = version_str;
-
-	read_partid_serialno_t read_partid_serialno;
-
-	hackrf_board_partid_serialno_read(_dev, &read_partid_serialno);
-
-	char part_id_str[100];
-
-	sprintf(part_id_str, "%08x%08x", read_partid_serialno.part_id[0], read_partid_serialno.part_id[1]);
-
-	info["part id"] = part_id_str;
-
-	char serial_str[100];
-	sprintf(serial_str, "%08x%08x%08x%08x", read_partid_serialno.serial_no[0], read_partid_serialno.serial_no[1], read_partid_serialno.serial_no[2], read_partid_serialno.serial_no[3]);
-	info["serial"] = serial_str;
-
-	uint16_t clock;
-
-	hackrf_si5351c_read(_dev,0,&clock);
-
-	info["clock source"]=(clock==0x51)?"internal":"external";
+	info["origin"] = "https://github.com/alfille/SoapyQS1R" ;
+	info["ADC"] = "LTC2208";
+	
 
 	return(info);
 
@@ -170,41 +192,104 @@ bool SoapyQS1R::getFullDuplex( const int direction, const size_t channel ) const
 
 SoapySDR::ArgInfoList SoapyQS1R::getSettingInfo(void) const
 {
-	SoapySDR::ArgInfoList setArgs;
+    SoapySDR::ArgInfoList setArgs;
 
-	SoapySDR::ArgInfo biastxArg;
-	biastxArg.key="bias_tx";
-	biastxArg.value="false";
-	biastxArg.name="Antenna Bias";
-	biastxArg.description="Antenna port power control.";
-	biastxArg.type=SoapySDR::ArgInfo::BOOL;
-	setArgs.push_back(biastxArg);
+    SoapySDR::ArgInfo ditherArg;
+    ditherArg.key = "dithering";
+    ditherArg.value = "false";
+    ditherArg.name = "ADC Dither";
+    ditherArg.description = "ADC dithering enable";
+    ditherArg.type = SoapySDR::ArgInfo::BOOL;
+    setArgs.push_back(ditherArg);
 
-	return setArgs;
+    SoapySDR::ArgInfo randomizerArg;
+    randomizerArg.key = "randomizing";
+    randomizerArg.value = "false";
+    randomizerArg.name = "ADC Randomizer";
+    randomizerArg.description = "ADC randomizing enable";
+    randomizerArg.type = SoapySDR::ArgInfo::BOOL;
+    setArgs.push_back(randomizerArg);
+
+    SoapySDR::ArgInfo gainArg;
+    gainArg.key = "gain";
+    gainArg.value = "low";
+    gainArg.name = "PGA gain";
+    gainArg.description = "ADC PGA signal gain";
+    gainArg.type = SoapySDR::ArgInfo::STRING;
+    gainArg.options.push_back("low");
+    gainArg.optionNames.push_back("Low");
+    gainArg.options.push_back("high");
+    gainArg.optionNames.push_back("High");
+    setArgs.push_back(gainArg);
+
+    SoapySDR::ArgInfo bypassArg;
+    bypassArg.key = "bypass";
+    bypassArg.value = "false";
+    bypassArg.name = "DAC Bypass";
+    bypassArg.description = "Bypass DAC (audio) output";
+    bypassArg.type = SoapySDR::ArgInfo::BOOL;
+    setArgs.push_back(bypassArg);
+
+    SoapySDR::ArgInfo mutingArg;
+    mutingArg.key = "muting";
+    mutingArg.value = "false";
+    mutingArg.name = "External Muting";
+    mutingArg.description = "Mute External DAC (audio) input";
+    mutingArg.type = SoapySDR::ArgInfo::BOOL;
+    setArgs.push_back(mutingArg);
+
+    SoapySDR::ArgInfo clockArg;
+    clockArg.key = "clock";
+    clockArg.value = "24";
+    clockArg.name = "DAC clock";
+    clockArg.description = "DAC (audio) clock sampling rate";
+    clockArg.type = SoapySDR::ArgInfo::STRING;
+    clockArg.options.push_back("24");
+    clockArg.optionNames.push_back("24kSPS");
+    clockArg.options.push_back("48");
+    clockArg.optionNames.push_back("48kSPS");
+    setArgs.push_back(clockArg);
+
+    return setArgs;
 }
 
 void SoapyQS1R::writeSetting(const std::string &key, const std::string &value)
 {
-	if(key=="bias_tx"){
-		std::lock_guard<std::mutex> lock(_device_mutex);
-		_tx_stream.bias=(value=="true") ? true : false;
-		int ret=hackrf_set_antenna_enable(_dev,_tx_stream.bias);
-		if(ret!=HACKRF_SUCCESS){
-
-			SoapySDR_logf(SOAPY_SDR_INFO,"Failed to apply antenna bias voltage");
-
-		}
+	if(key=="dithering") {
+		QS1R_putbit( _dev, DDC_CONTROL_REG1, ADC_DITHER_ENABLE, value=="true"?1:0 ) ;
+	} else if (key=="randomizing") {
+		QS1R_putbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, value=="true"?1:0 ) ;
+	} else if (key=="gain") {
+		QS1R_putbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, value=="high"?1:0 ) ;
+	} else if (key=="bypass") {
+		QS1R_putbit( _dev, DDC_CONTROL_REG0, DAC_BYPASS, value=="true"?1:0 ) ;
+	} else if (key=="muting") {
+		QS1R_putbit( _dev, DDC_CONTROL_REG0, DAC_EXT_MUTE_ENABLE, value=="true"?1:0 ) ;
+	} else if (key=="clock") {
+		QS1R_putbit( _dev, DDC_CONTROL_REG0, DAC_CLOCK_SELECT, value=="48"?1:0 ) ;
 	}
 
 }
 
 std::string SoapyQS1R::readSetting(const std::string &key) const
 {
-	if (key == "bias_tx") {
-		return _tx_stream.bias?"true":"false";
+	int value ;
+	if(key=="dithering" && QS1R_getbit( _dev, DDC_CONTROL_REG1, ADC_DITHER_ENABLE, &value ) ) {
+		return ((value==1) ? "true" : "false") ;
+	} else if (key=="randomizing" && QS1R_getbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, &value ) ) {
+		return ((value==1) ? "true" : "false") ;
+	} else if (key=="gain" && QS1R_getbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, &value ) ) {
+		return ((value==1) ? "high" : "low") ;
+	} else if (key=="bypass" && QS1R_getbit( _dev, DDC_CONTROL_REG0, DAC_BYPASS, &value ) ) {
+		return ((value==1) ? "true" : "false") ;
+	} else if (key=="muting" && QS1R_getbit( _dev, DDC_CONTROL_REG0, DAC_EXT_MUTE_ENABLE, &value ) ) {
+		return ((value==1) ? "true" : "false") ;
+	} else if (key=="clock" && QS1R_getbit( _dev, DDC_CONTROL_REG0, DAC_CLOCK_SELECT, &value ) ) {
+		return ((value==1) ? "48" : "24") ;
 	}
 	return "";
 }
+
 /*******************************************************************
  * Antenna API
  ******************************************************************/
@@ -212,20 +297,25 @@ std::string SoapyQS1R::readSetting(const std::string &key) const
 std::vector<std::string> SoapyQS1R::listAntennas( const int direction, const size_t channel ) const
 {
 	std::vector<std::string> options;
-	options.push_back( "TX/RX" );
+	options.push_back( "RX BNC LPF" );
+	options.push_back( "RX SMA" );
 	return(options);
 }
 
 
 void SoapyQS1R::setAntenna( const int direction, const size_t channel, const std::string &name )
 {
-	/* TODO delete this function or throw if name != RX... */
+	if (direction == SOAPY_SDR_RX) {
+		_antenna = name ;
+    } else {
+        throw std::runtime_error("setAntenna failed: QS1R only supports RX");
+    }
 }
 
 
 std::string SoapyQS1R::getAntenna( const int direction, const size_t channel ) const
 {
-	return("TX/RX");
+	return(_antenna);
 }
 
 
@@ -233,219 +323,11 @@ std::string SoapyQS1R::getAntenna( const int direction, const size_t channel ) c
  * Frontend corrections API
  ******************************************************************/
 
-
-bool SoapyQS1R::hasDCOffsetMode( const int direction, const size_t channel ) const
-{
-	return(false);
-}
-
-
 /*******************************************************************
  * Gain API
  ******************************************************************/
 
-std::vector<std::string> SoapyQS1R::listGains( const int direction, const size_t channel ) const
-{
-	std::vector<std::string> options;
-	if ( direction == SOAPY_SDR_RX )
-	{
-	// in gr-osmosdr/lib/soapy/ soapy_sink_c.cc and soapy_source_c.cc expect if_gain at front and bb_gain at back
-		options.push_back( "LNA" );						// RX: if_gain
-		options.push_back( "AMP" );						// RX: rf_gain
-		options.push_back( "VGA" );						// RX: bb_gain
-	}
-	else
-	{
-		options.push_back( "VGA" );						// TX: if_gain
-		options.push_back( "AMP" );						// TX: rf_gain
-	}
-
-	return(options);
-	/*
-	 * list available gain elements,
-	 * the functions below have a "name" parameter
-	 */
-}
-
-
-void SoapyQS1R::setGainMode( const int direction, const size_t channel, const bool automatic )
-{
-	/* enable AGC if the hardware supports it, or remove this function */
-}
-
-
-bool SoapyQS1R::getGainMode( const int direction, const size_t channel ) const
-{
-	return(false);
-	/* ditto for the AGC */
-}
-
-
-void SoapyQS1R::setGain( const int direction, const size_t channel, const double value )
-{
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	int32_t ret(0), gain(0);
-	gain = value;
-	SoapySDR_logf(SOAPY_SDR_DEBUG,"setGain RF %s, channel %d, gain %d", direction == SOAPY_SDR_RX ? "RX" : "TX", channel, gain);
-
-	if ( direction == SOAPY_SDR_RX )
-	{
-		if ( gain <= 0 )
-		{
-			_rx_stream.lna_gain	= 0;
-			_rx_stream.vga_gain	= 0;
-			_current_amp		= 0;
-		}else if ( gain <= (HACKRF_RX_LNA_MAX_DB / 2) + (HACKRF_RX_VGA_MAX_DB / 2) )
-		{
-			_rx_stream.vga_gain	= (gain / 3) & ~0x1;
-			_rx_stream.lna_gain	= gain - _rx_stream.vga_gain;
-			_current_amp		= 0;
-		}else if ( gain <= ( (HACKRF_RX_LNA_MAX_DB / 2) + (HACKRF_RX_VGA_MAX_DB / 2) + HACKRF_AMP_MAX_DB) )
-		{
-			_current_amp		= HACKRF_AMP_MAX_DB;
-			_rx_stream.vga_gain	= ( (gain - _current_amp) / 3) & ~0x1;
-			_rx_stream.lna_gain	= gain -_current_amp - _rx_stream.vga_gain;
-		}else if ( gain <= HACKRF_RX_LNA_MAX_DB + HACKRF_RX_VGA_MAX_DB + HACKRF_AMP_MAX_DB )
-		{
-			_current_amp		= HACKRF_AMP_MAX_DB;
-			_rx_stream.vga_gain	= (gain - _current_amp) * double(HACKRF_RX_LNA_MAX_DB) / double(HACKRF_RX_VGA_MAX_DB);
-			_rx_stream.lna_gain	= gain - _current_amp - _rx_stream.vga_gain;
-		}
-
-		_rx_stream.amp_gain=_current_amp;
-
-		ret	= hackrf_set_lna_gain( _dev, _rx_stream.lna_gain );
-		ret	|= hackrf_set_vga_gain( _dev, _rx_stream.vga_gain );
-		ret	|= hackrf_set_amp_enable( _dev, (_current_amp > 0) ? 1 : 0 );
-	}else if ( direction == SOAPY_SDR_TX )
-	{
-		if ( gain <= 0 )
-		{
-			_current_amp		= 0;
-			_tx_stream.vga_gain	= 0;
-		}else if ( gain <= (HACKRF_TX_VGA_MAX_DB / 2) )
-		{
-			_current_amp		= 0;
-			_tx_stream.vga_gain	= gain;
-		}else if ( gain <= HACKRF_TX_VGA_MAX_DB + HACKRF_AMP_MAX_DB )
-		{
-			_current_amp		= HACKRF_AMP_MAX_DB;
-			_tx_stream.vga_gain	= gain - HACKRF_AMP_MAX_DB;
-		}
-
-		_tx_stream.amp_gain=_current_amp;
-
-		ret	= hackrf_set_txvga_gain( _dev, _tx_stream.vga_gain );
-		ret	|= hackrf_set_amp_enable( _dev, (_current_amp > 0) ? 1 : 0 );
-	}
-	if ( ret != HACKRF_SUCCESS )
-	{
-		SoapySDR::logf( SOAPY_SDR_ERROR, "setGain(%f) returned %s", value, hackrf_error_name( (hackrf_error) ret ) );
-	}
-}
-
-
-void SoapyQS1R::setGain( const int direction, const size_t channel, const std::string &name, const double value )
-{
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	SoapySDR_logf(SOAPY_SDR_DEBUG,"setGain %s %s, channel %d, gain %d", name.c_str(), direction == SOAPY_SDR_RX ? "RX" : "TX", channel, (int)value);
-	if ( name == "AMP" )
-	{
-		_current_amp = value;
-		_current_amp = (_current_amp > 0)?HACKRF_AMP_MAX_DB : 0; //clip to possible values
-
-		if(direction == SOAPY_SDR_RX){
-			_rx_stream.amp_gain=_current_amp;
-		}else if (direction ==SOAPY_SDR_TX){
-			_tx_stream.amp_gain=_current_amp;
-		}
-
-		if ( _dev != NULL )
-		{
-			int ret = hackrf_set_amp_enable( _dev, (_current_amp > 0)?1 : 0 );
-			if ( ret != HACKRF_SUCCESS )
-			{
-				SoapySDR::logf( SOAPY_SDR_ERROR, "hackrf_set_amp_enable(%f) returned %s", _current_amp, hackrf_error_name( (hackrf_error) ret ) );
-			}
-		}
-	}else if ( direction == SOAPY_SDR_RX and name == "LNA" )
-	{
-		_rx_stream.lna_gain = value;
-		if ( _dev != NULL )
-		{
-			int ret = hackrf_set_lna_gain( _dev, _rx_stream.lna_gain );
-			if ( ret != HACKRF_SUCCESS )
-			{
-				SoapySDR::logf( SOAPY_SDR_ERROR, "hackrf_set_lna_gain(%f) returned %s", _rx_stream.lna_gain, hackrf_error_name( (hackrf_error) ret ) );
-			}
-		}
-	}else if ( direction == SOAPY_SDR_RX and name == "VGA" )
-	{
-		_rx_stream.vga_gain = value;
-		if ( _dev != NULL )
-		{
-			int ret = hackrf_set_vga_gain( _dev, _rx_stream.vga_gain );
-			if ( ret != HACKRF_SUCCESS )
-			{
-				SoapySDR::logf( SOAPY_SDR_ERROR, "hackrf_set_vga_gain(%f) returned %s", _rx_stream.vga_gain, hackrf_error_name( (hackrf_error) ret ) );
-			}
-		}
-	}else if ( direction == SOAPY_SDR_TX and name == "VGA" )
-	{
-		_tx_stream.vga_gain = value;
-		if ( _dev != NULL )
-		{
-			int ret = hackrf_set_txvga_gain( _dev, _tx_stream.vga_gain );
-			if ( ret != HACKRF_SUCCESS )
-			{
-				SoapySDR::logf( SOAPY_SDR_ERROR, "hackrf_set_txvga_gain(%f) returned %s", _tx_stream.vga_gain, hackrf_error_name( (hackrf_error) ret ) );
-			}
-		}
-	}
-
-
-	/* set individual gain element by name */
-}
-
-
-double SoapyQS1R::getGain( const int direction, const size_t channel, const std::string &name ) const
-{
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	double gain = 0.0;
-	if ( direction == SOAPY_SDR_RX and name == "AMP" )
-	{
-		gain = _rx_stream.amp_gain;
-	}else if ( direction == SOAPY_SDR_TX and name == "AMP" )
-	{
-		gain = _tx_stream.amp_gain;
-	}else if ( direction == SOAPY_SDR_RX and name == "LNA" )
-	{
-		gain = _rx_stream.lna_gain;
-	}else if ( direction == SOAPY_SDR_RX and name == "VGA" )
-	{
-		gain = _rx_stream.vga_gain;
-	}else if ( direction == SOAPY_SDR_TX and name == "VGA" )
-	{
-		gain = _tx_stream.vga_gain;
-	}
-
-	return(gain);
-}
-
-
-SoapySDR::Range SoapyQS1R::getGainRange( const int direction, const size_t channel, const std::string &name ) const
-{
-	if ( name == "AMP" )
-		return(SoapySDR::Range( 0, HACKRF_AMP_MAX_DB,  HACKRF_AMP_MAX_DB) );
-	if ( direction == SOAPY_SDR_RX and name == "LNA" )
-		return(SoapySDR::Range( 0, HACKRF_RX_LNA_MAX_DB, 8.0 ) );
-	if ( direction == SOAPY_SDR_RX and name == "VGA")
-		return(SoapySDR::Range( 0, HACKRF_RX_VGA_MAX_DB, 2.0 ) );
-	if ( direction == SOAPY_SDR_TX and name == "VGA" )
-		return(SoapySDR::Range( 0, HACKRF_TX_VGA_MAX_DB, 1.0 ) );
-	return(SoapySDR::Range( 0, 0 ) );
-}
-
+// only "gain" is the unquantified high and low in general settings.
 
 /*******************************************************************
  * Frequency API
@@ -453,55 +335,29 @@ SoapySDR::Range SoapyQS1R::getGainRange( const int direction, const size_t chann
 
 void SoapyQS1R::setFrequency( const int direction, const size_t channel, const std::string &name, const double frequency, const SoapySDR::Kwargs &args )
 {
-	if ( name == "BB" )
-		return;
-	if ( name != "RF" )
-		throw std::runtime_error( "setFrequency(" + name + ") unknown name" );
-
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	_current_frequency = frequency;
-
-
-	if(direction==SOAPY_SDR_RX){
-
-		_rx_stream.frequency=_current_frequency;
-	}
-	if(direction==SOAPY_SDR_TX){
-
-		_tx_stream.frequency=_current_frequency;
-	}
-
-	if ( _dev != NULL )
-	{
-		int ret = hackrf_set_freq( _dev, _current_frequency );
-
-		if ( ret != HACKRF_SUCCESS )
-		{
-			SoapySDR::logf( SOAPY_SDR_ERROR, "hackrf_set_freq(%f) returned %s", _current_frequency, hackrf_error_name( (hackrf_error) ret ) );
+	if ( name == "RF" ) {
+		uint32_t f = DDC_FREQ( frequency ) ;
+		if ( QS1R_write_multibus( _dev, DDC_FREQ_REG, f ) ) {
+			_RX_FREQ = frequency ;
 		}
+	} else if ( name == "CORR" ) {
+		_freq_corr = frequency ;
+		setFrequency( direction, channel, "RF", _RX_FREQ, args ) ;
+	} else {
+		throw std::runtime_error( "setFrequency(" + name + ") unknown name" );
 	}
 }
 
 
 double SoapyQS1R::getFrequency( const int direction, const size_t channel, const std::string &name ) const
 {
-	if ( name == "BB" )
-		return(0.0);
-	if ( name != "RF" )
-		throw std::runtime_error( "getFrequency(" + name + ") unknown name" );
-
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	double freq(0.0);
-
-	if(direction==SOAPY_SDR_RX){
-
-		freq = _rx_stream.frequency;
+	if ( name == "RF" ) {
+		return _RX_FREQ ;
+	} else if ( name == "CORR" ) {
+		return _freq_corr ;
+	} else {
+		return 0.0 ;
 	}
-	if(direction==SOAPY_SDR_TX){
-
-		freq = _tx_stream.frequency;
-	}
-	return(freq);
 }
 
 SoapySDR::ArgInfoList SoapyQS1R::getFrequencyArgsInfo(const int direction, const size_t channel) const
@@ -513,19 +369,28 @@ SoapySDR::ArgInfoList SoapyQS1R::getFrequencyArgsInfo(const int direction, const
 
 std::vector<std::string> SoapyQS1R::listFrequencies( const int direction, const size_t channel ) const
 {
-	std::vector<std::string> names;
-	names.push_back( "RF" );
-	return(names);
+    std::vector<std::string> names;
+    names.push_back("RF");
+    names.push_back("CORR");
+    return names;
 }
 
 
 SoapySDR::RangeList SoapyQS1R::getFrequencyRange( const int direction, const size_t channel, const std::string &name ) const
 {
-	if ( name == "BB" )
-		return(SoapySDR::RangeList( 1, SoapySDR::Range( 0.0, 0.0 ) ) );
-	if ( name != "RF" )
-		throw std::runtime_error( "getFrequencyRange(" + name + ") unknown name" );
-	return(SoapySDR::RangeList( 1, SoapySDR::Range( 0, 7250000000ull ) ) );
+    SoapySDR::RangeList results;
+    if ( name == "RF" ) {
+		if (_antenna == "RX BNC LPF")
+		{
+			results.push_back(SoapySDR::Range(15000, 55000000));
+		} else if (_antenna == "RX SMA")
+		{
+			results.push_back(SoapySDR::Range(15000, 300000000));
+		}
+	} else if (name == "CORR" ) {
+		results.push_back(SoapySDR::Range(-50000, 50000));
+	}
+    return results;
 }
 
 
@@ -536,25 +401,48 @@ SoapySDR::RangeList SoapyQS1R::getFrequencyRange( const int direction, const siz
 void SoapyQS1R::setSampleRate( const int direction, const size_t channel, const double rate )
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
-	_current_samplerate = rate;
 
 	if(direction==SOAPY_SDR_RX){
-
-		_rx_stream.samplerate=_current_samplerate;
-	}
-	if(direction==SOAPY_SDR_TX){
-
-		_tx_stream.samplerate=_current_samplerate;
-	}
-
-	if ( _dev != NULL )
-	{
-		int ret = hackrf_set_sample_rate( _dev, _current_samplerate );
-
-		if ( ret != HACKRF_SUCCESS )
-		{
-			SoapySDR::logf( SOAPY_SDR_ERROR, "hackrf_set_sample_rate(%f) returned %s", _current_samplerate, hackrf_error_name( (hackrf_error) ret ) );
-			throw std::runtime_error( "setSampleRate()" );
+		if ( rate <= 25e3 ) {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,   25000 ) ) {
+				_sample_rate = 25e3;
+				_bandwidth = 40e3 ;
+			}
+		} else if ( rate <= 50e3 ) {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,   50000 ) ) {
+				_sample_rate = 50e3 ;
+				_bandwidth = 40e3 ;
+			}
+		} else if ( rate <= 125e3 ) {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,  125000 ) ) {
+				_sample_rate = 125e3 ;
+				_bandwidth = 100e3 ;
+			}
+		} else if ( rate <= 250e3 ) {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,  250000 ) ) {
+				_sample_rate = 250e3 ;
+				_bandwidth = 200e3 ;
+			}
+		} else if ( rate <= 625e3 ) {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,  625000 ) ) {
+				_sample_rate = 625e3 ;
+				_bandwidth = 500e3 ;
+			}
+		} else if ( rate <= 1250e3 ) {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG, 1250000 ) ) {
+				_sample_rate = 1250e3 ;
+				_bandwidth = 1000e3 ;
+			}
+		} else if ( rate <= 1562.5e3 ) {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG, 1562500 ) ) {
+				_sample_rate = 1562.5e3 ;
+				_bandwidth = 1200e3 ;
+			}
+		} else {
+			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG, 2500000 ) ) {
+				_sample_rate = 2500e3 ;
+				_bandwidth = 2000e3 ;
+			}
 		}
 	}
 }
@@ -563,100 +451,65 @@ void SoapyQS1R::setSampleRate( const int direction, const size_t channel, const 
 double SoapyQS1R::getSampleRate( const int direction, const size_t channel ) const
 {
 	std::lock_guard<std::mutex> lock(_device_mutex);
-	double samp(0.0);
-	if(direction==SOAPY_SDR_RX){
-
-		samp= _rx_stream.samplerate;
-	}
-	if(direction==SOAPY_SDR_TX){
-
-		samp= _tx_stream.samplerate;
-	}
-
-	return(samp);
+	return(_sample_rate);
 }
 
 
 std::vector<double> SoapyQS1R::listSampleRates( const int direction, const size_t channel ) const
 {
 	std::vector<double> options;
-	for ( double r = 1e6; r <= 20e6; r += 1e6 )
-	{
-		options.push_back( r );
-	}
+	options.push_back(   25e3 );
+	options.push_back(   50e3 );
+	options.push_back(  125e3 );
+	options.push_back(  250e3 );
+	options.push_back(  625e3 );
+	options.push_back( 1250e3 );
+	options.push_back( 1562.5e3 );
+	options.push_back( 2500e3 );
 	return(options);
 }
 
 
 void SoapyQS1R::setBandwidth( const int direction, const size_t channel, const double bw )
 {
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	_current_bandwidth = bw;
-
-	if(direction==SOAPY_SDR_RX){
-
-		_rx_stream.bandwidth=_current_bandwidth;
+	double sr ;
+	if ( bw <= 20e3 ) {
+		sr = 25e3 ;
+	} else if ( bw <= 40e3 ) {
+		sr = 50e3 ;
+	} else if ( bw <= 100e3 ) {
+		sr = 125e3 ;
+	} else if ( bw <= 200e3 ) {
+		sr = 250e3 ;
+	} else if ( bw <= 500e3 ) {
+		sr = 625e3 ;
+	} else if ( bw <= 1000e3 ) {
+		sr = 1250e3 ;
+	} else if ( bw <= 1200e3 ) {
+		sr = 1562.5e3 ;
+	} else {
+		sr = 2000e3 ;
 	}
-	if(direction==SOAPY_SDR_TX){
-
-		_tx_stream.bandwidth=_current_bandwidth;
-	}
-
-	if(_current_bandwidth > 0){
-		_auto_bandwidth=false;
-
-		if ( _dev != NULL )
-		{
-			int ret = hackrf_set_baseband_filter_bandwidth( _dev, _current_bandwidth );
-			if ( ret != HACKRF_SUCCESS )
-			{
-				SoapySDR::logf( SOAPY_SDR_ERROR, "hackrf_set_baseband_filter_bandwidth(%f) returned %s", _current_bandwidth, hackrf_error_name( (hackrf_error) ret ) );
-				throw std::runtime_error( "setBandwidth()" );
-			}
-		}
-
-	}else{
-		_auto_bandwidth=true;
-	}
-
+	setSampleRate( direction, channel, sr ) ;
 }
 
 
 double SoapyQS1R::getBandwidth( const int direction, const size_t channel ) const
 {
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	double bw(0.0);
-	if(direction==SOAPY_SDR_RX){
-
-		bw = _rx_stream.bandwidth;
-	}
-	if(direction==SOAPY_SDR_TX){
-
-		bw = _tx_stream.bandwidth;
-	}
-
-	return (bw);
+	return (_bandwidth);
 }
 
 
 std::vector<double> SoapyQS1R::listBandwidths( const int direction, const size_t channel ) const
 {
 	std::vector<double> options;
-	options.push_back( 1750000 );
-	options.push_back( 2500000 );
-	options.push_back( 3500000 );
-	options.push_back( 5000000 );
-	options.push_back( 5500000 );
-	options.push_back( 6000000 );
-	options.push_back( 7000000 );
-	options.push_back( 8000000 );
-	options.push_back( 9000000 );
-	options.push_back( 10000000 );
-	options.push_back( 12000000 );
-	options.push_back( 14000000 );
-	options.push_back( 15000000 );
-	options.push_back( 20000000 );
-	options.push_back( 24000000 );
-	options.push_back( 28000000 );
+	options.push_back( 20e3 );
+	options.push_back( 40e3 );
+	options.push_back( 100e3 );
+	options.push_back( 200e3 );
+	options.push_back( 500e3 );
+	options.push_back( 1000e3 );
+	options.push_back( 1200e3 );
+	options.push_back( 2000e3 );
 	return(options);
 }

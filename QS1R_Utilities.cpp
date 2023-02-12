@@ -192,3 +192,61 @@ bool bulk_write_EP( libusb_device_handle * dev, int ep, unsigned char * buffer, 
 	}
 	return transfered==length ;
 }
+
+// Strangely Covinton's code uses a special code for this. We'll try standard multibus read
+bool QS1R_firmware_sn( libusb_device_handle * dev, char * sn, int sn_leng)
+{
+	uint32_t value ;
+	if ( QS1R_read_multibus( dev, DDC_VERSION_REG, &value ) ) {
+		snprintf( sn, sn_leng, "%u", value ) ;
+		return true ;
+	}
+	return false ;
+}
+
+bool QS1R_read_multibus( libusb_device_handle * dev, int index, uint32_t * value)
+{
+	unsigned char * buf[4] ;
+	if ( libusb_control_transfer( dev, VRT_VENDOR_IN, VRQ_MULTI_READ,
+           index, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
+			   return false ;
+   }
+	*value = (uint32_t) buf[3] << 24 | (uint32_t) buf[2] << 16 | (uint32_t) buf[1] << 8 | (uint32_t) buf[0] ) ;
+	return true ;
+}
+
+bool QS1R_write_multibus( libusb_device_handle * dev, int index, uint32_t value)
+{
+	unsigned char * buf[4] ;
+	buf[0] = value & 0xFF ;
+	buf[1] = (value>>8) & 0xFF ;
+	buf[2] = (value>>16) & 0xFF ;
+	buf[3] = (value>>24) & 0xFF ;
+	if ( libusb_control_transfer( dev, VRT_VENDOR_OUT, VRQ_MULTI_WRITE,
+           index, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
+			   return false ;
+   }
+	return true ;
+}
+
+bool QS1R_putbit( libusb_device_handle * dev, int index, int bit, int value) {
+	uint32_t reg ;
+	if ( QS1R_read_multibus( dev, index, &reg ) {
+		if ( value == 0 ) {
+			clearB( reg, bit ) ;
+		} else {
+			setB( reg, bit ) ;
+		}
+		return QS1R_write_multibus( dev, index, reg ) ;
+	}
+	return false ;
+}
+
+bool QS1R_getbit( libusb_device_handle * dev, int index, int bit, int * value) {
+	uint32_t reg ;
+	if ( QS1R_read_multibus( dev, index, &reg ) {
+		*value = getB( reg, bit ) ;
+		return true ;
+	}
+	return false ;
+}
