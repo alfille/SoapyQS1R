@@ -1,8 +1,0 @@
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/install/strip.dir
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/install/local.dir
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/install.dir
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/list_install_components.dir
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/rebuild_cache.dir
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/edit_cache.dir
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/uninstall.dir
-/home/paulalfille/SoapyQS1R/build/CMakeFiles/QS1RSupport.dir
