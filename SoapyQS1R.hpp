@@ -22,6 +22,7 @@
 #pragma once
 #include <string.h>
 #include <mutex>
+#include <atomic>
 #include <condition_variable>
 #include <SoapySDR/Device.hpp>
 #include <SoapySDR/Registry.hpp>
@@ -29,13 +30,14 @@
 #include <set>
 #include <libusb.h>
 #include <math.h>
+#include <thread>
 
-#define BUF_LEN         262144
-#define BUF_NUM         15
-#define BYTES_PER_SAMPLE    4
-#define QS1R_RX_VGA_MAX_DB 62
-#define QS1R_RX_LNA_MAX_DB 40
-#define QS1R_AMP_MAX_DB 14
+//#define BUF_LEN         262144
+//#define BUF_NUM         15
+//#define BYTES_PER_SAMPLE    4
+//#define QS1R_RX_VGA_MAX_DB 62
+//#define QS1R_RX_LNA_MAX_DB 40
+//#define QS1R_AMP_MAX_DB 14
 
 // Bit macros
 // 32 bit for QS1R registers
@@ -153,9 +155,6 @@ typedef enum {
 #define MAX_EP0_PACKET_SIZE     64
 #define MAX_EP4_PACKET_SIZE     1024
 
-// USB
-extern libusb_context * qs1r_context ;
-
 // EndPoint 2 output
 #define QS1R_EP2 0x02
 
@@ -174,14 +173,6 @@ extern libusb_context * qs1r_context ;
 #define FX2LP_PID 0x8613
 #define FX2LP_VID 0x04B4
 
-/* Utilities prototypes */
-bool QS1R_initialize_device( libusb_device_handle * dev ) ;
-bool QS1R_read_multibus( libusb_device_handle * dev, int addr, uint32_t * value) ;
-bool QS1R_write_multibus( libusb_device_handle * dev, int addr, uint32_t value) ;
-bool QS1R_firmware_sn( libusb_device_handle * dev, char * sn, int sn_leng) ;
-bool QS1R_putbit( libusb_device_handle * dev, int index, int bit, int value) ;
-bool QS1R_getbit( libusb_device_handle * dev, int index, int bit, int * value) ;
-
 /*!
  * The session object manages qs1r_init/exit
  * with a process-wide reference count.
@@ -191,6 +182,8 @@ class SoapyQS1RSession
 public:
     SoapyQS1RSession(void);
     ~SoapyQS1RSession(void);
+
+    static libusb_context * qs1r_context ;
 };
 
 class SoapyQS1R : public SoapySDR::Device
@@ -248,25 +241,25 @@ public:
 
 
     int activateStream(
-        SoapySDR::Stream *stream,
-        const int flags = 0,
-        const long long timeNs = 0,
-        const size_t numElems = 0 );
+            SoapySDR::Stream *stream,
+            const int flags = 0,
+            const long long timeNs = 0,
+            const size_t numElems = 0 );
 
 
     int deactivateStream(
-        SoapySDR::Stream *stream,
-        const int flags = 0,
-        const long long timeNs = 0 );
+            SoapySDR::Stream *stream,
+            const int flags = 0,
+            const long long timeNs = 0 );
 
 
     int readStream(
-        SoapySDR::Stream *stream,
-        void * const *buffs,
-        const size_t numElems,
-        int &flags,
-        long long &timeNs,
-        const long timeoutUs = 100000 );
+            SoapySDR::Stream *stream,
+            void * const *buffs,
+            const size_t numElems,
+            int &flags,
+            long long &timeNs,
+            const long timeoutUs = 100000 );
 
 
     int writeStream(
@@ -282,8 +275,7 @@ public:
             size_t &chanMask,
             int &flags,
             long long &timeNs,
-            const long timeoutUs
-    );
+            const long timeoutUs);
 
 
     int acquireReadBuffer(
@@ -398,15 +390,20 @@ public:
 
 
 //    int hackrf_rx_callback( int8_t *buffer, int32_t length );
+    std::thread _rx_async_thread;
+    void rx_callback(unsigned char *buf, uint32_t len);
 
 
 
 private:
 
-	double _sample_rate ;
-	double _bandwidth ;
+    double _sample_rate ;
+    double _bandwidth ;
 
-	libusb_device_handle * _dev ;
+    libusb_device_handle * _dev ;
+
+#if 0
+    struct libusb_transfer * _transfer ; 
  
     SoapySDR::Stream* const TX_STREAM = (SoapySDR::Stream*) 0x1;
     SoapySDR::Stream* const RX_STREAM = (SoapySDR::Stream*) 0x2;
@@ -468,13 +465,16 @@ private:
 
     bool _auto_bandwidth;
 
-    //hackrf_device * _dev;
+#endif
+
     std::string _serial;
 
     double _RX_FREQ;
     double _freq_corr; // frequency correction
-	std::string _antenna ;
-	
+    std::string _antenna ;
+
+
+    
     double _current_samplerate;
 
     uint32_t _current_bandwidth;
@@ -492,4 +492,84 @@ private:
     HackRF_transceiver_mode_t _current_mode;
 
     SoapyQS1RSession _sess;
+
+    bool qs1r_by_serial( const char * serial ) ;
+    bool qs1r_by_index( const char * index ) ;
+    bool ram_write( int ram_address, unsigned char * buffer, int length ) ;
+    bool cpu_reset( int state ) ;
+    bool bulk_write_EP( int ep, unsigned char * buffer, int length ) ;
+    bool get_firmware_sn( uint32_t * value ) ;
+    bool load_device( void ) ;
+    bool firmware_write( const char * filename ) ;
+    bool firmware_line( char * line ) ;
+    bool firmware_line_type0( char * line, int flength, int faddr ) ;
+    bool FPGA_write( const char * filename ) ;
+    bool FPGA_control( int state ) ;
+    bool FPGA_packet( FILE * rbf ) ;
+    bool configure_device( void ) ;
+    bool read_multibus( int addr, uint32_t * value) ;
+    bool write_multibus( int addr, uint32_t value) ;
+    bool DDC_putbit( int index, int bit, int value) ;
+    bool DDC_getbit( int index, int bit, int * value) const ;
+
+    typedef void(*qs1r_read_async_cb_t)(unsigned char *buf, uint32_t len, void *ctx);
+    int qs1r_cancel_async(void);
+    int qs1r_read_async(qs1r_read_async_cb_t cb, uint32_t buf_num, uint32_t buf_len) ;
+    static int _qs1r_free_async_buffers(void);
+    static int _qs1r_alloc_async_buffers(void);
+    int qs1r_wait_async(qs1r_read_async_cb_t cb);
+    static void LIBUSB_CALL _libusb_callback(struct libusb_transfer *xfer);
+    //int qs1r_close(void);
+    uint16_t qs1r_demod_read_reg(uint8_t page, uint16_t addr, uint8_t len);
+    int qs1r_demod_write_reg(uint8_t page, uint16_t addr, uint16_t val, uint8_t len);
+    int qs1r_write_reg(uint8_t block, uint16_t addr, uint16_t val, uint8_t len);
+    int qs1r_write_array(uint8_t block, uint16_t addr, uint8_t *array, uint8_t len);
+    int qs1r_read_array(uint8_t block, uint16_t addr, uint8_t *array, uint8_t len);
+    bool _use_zerocopy ;
+    bool _async_cancel ;
+    enum qs1r_async_status {
+        QS1R_INACTIVE = 0,
+        QS1R_CANCELING,
+        QS1R_RUNNING
+    } _async_status ;
+    bool _dev_lost ;
+    bool _iqSwap;
+    uint32_t _xfer_errors;
+    uint32_t _xfer_buf_num;
+    uint32_t _xfer_buf_len;
+    unsigned char **_xfer_buf;
+    struct libusb_transfer **_xfer;
+    qs1r_read_async_cb_t _callback;
+    size_t numBuffers;
+    size_t bufferLength;
+    size_t _asyncBuffs;
+    std::atomic<long long> _ticks;
+    std::atomic<size_t>	_buf_count;
+    std::atomic<bool> _overflowEvent;
+    struct Buffer
+    {
+        unsigned long long tick;
+        std::vector<signed char> data;
+    };
+    std::vector<Buffer> _buffs;
+    size_t	_buf_head;
+    size_t	_buf_tail;
+    signed char *_currentBuff;
+    size_t _currentHandle;
+    std::atomic<bool> _resetBuffer;
+    size_t _bufferedElems;
+    long long _bufTicks;
+
+    typedef enum RXFormat
+    {
+        RX_FORMAT_FLOAT32, RX_FORMAT_INT16, RX_FORMAT_INT8
+    } RXFormat;
+    RXFormat _rxFormat;
+    std::vector<std::complex<float> > _lut_32f;
+    std::vector<std::complex<float> > _lut_swap_32f;
+    std::vector<std::complex<int16_t> > _lut_16i;
+    std::vector<std::complex<int16_t> > _lut_swap_16i;
+
+    void rx_async_operation(void);
+
 };

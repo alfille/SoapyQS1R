@@ -24,121 +24,124 @@
 /* Open a SQ1R by matching a string "serial nmumber" obtained in QS1Rfind */
 /* Assumes serial is a null terminated string*/
 /* NULL on failure */
-libusb_device_handle * qs1r_by_serial( const char * serial ) {
-	if ( strlen( serial ) == 0 ) {
-		return NULL ;
-	}
+bool SoapyQS1R::qs1r_by_serial( const char * serial ) {
+    if ( strlen( serial ) == 0 ) {
+        return false ;
+    }
 
-	libusb_device_handle * dev = NULL ;
+    _dev = NULL ;
     libusb_device ** devlist ;
-    ssize_t usb_count = libusb_get_device_list( qs1r_context, &devlist ) ;
+    ssize_t usb_count = libusb_get_device_list( SoapyQS1RSession::qs1r_context, &devlist ) ;
 
-	for ( auto i =0 ; i < usb_count ; ++i ) {
-		struct libusb_device_descriptor desc ;
-		libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
-		if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
-			if ( libusb_open( devlist[i], &dev ) == 0 ) {
-				unsigned char aserial[256] ;
-				libusb_get_string_descriptor_ascii( dev, desc.iSerialNumber, aserial, 256 ) ;
-				if ( strcmp( (char *) aserial, serial) == 0 ) {
-					break ;
-				} else { 
-					libusb_close( dev ) ;
-					dev = NULL ;
-				} 
-			}
-		}
-	}
+    for ( auto i =0 ; i < usb_count ; ++i ) {
+        struct libusb_device_descriptor desc ;
+        libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
+        if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
+            if ( libusb_open( devlist[i], &_dev ) == 0 ) {
+                unsigned char aserial[256] ;
+                libusb_get_string_descriptor_ascii( _dev, desc.iSerialNumber, aserial, 256 ) ;
+                if ( strcmp( (char *) aserial, serial) == 0 ) {
+                    break ;
+                } else { 
+                    libusb_close( _dev ) ;
+                    _dev = NULL ;
+                } 
+            }
+        }
+    }
     libusb_free_device_list( devlist, 1 ) ;
-    return dev ;
+    return _dev != NULL ; ;
 }
 
 /* Open the "index" number QS1R device */
 /* Uses atoi to get the number from the "index" string" */
 /* NULL on failure */
-libusb_device_handle * qs1r_by_index( const char * index ) {
-	int target = atoi( index ) ;
-	int idx = 0 ;
+bool SoapyQS1R::qs1r_by_index( const char * index ) {
+    int target = atoi( index ) ;
+    int idx = 0 ;
     libusb_device ** devlist ;
-    ssize_t usb_count = libusb_get_device_list( qs1r_context, &devlist ) ;
+    ssize_t usb_count = libusb_get_device_list( SoapyQS1RSession::qs1r_context, &devlist ) ;
 
-	for ( auto i =0 ; i < usb_count ; ++i ) {
-		struct libusb_device_descriptor desc ;
-		libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
-		if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
-			if ( idx == target ) {
-				libusb_device_handle * dev ;
-				libusb_open( devlist[i], &dev ) ;
-				libusb_free_device_list( devlist, 1 ) ;
-				return dev ;
-			}
-			++ idx ;
-		}
-	}
+    for ( auto i =0 ; i < usb_count ; ++i ) {
+        struct libusb_device_descriptor desc ;
+        libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
+        if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
+            if ( idx == target ) {
+                libusb_open( devlist[i], &_dev ) ;
+                libusb_free_device_list( devlist, 1 ) ;
+                return true ;
+            }
+            ++ idx ;
+        }
+    }
     libusb_free_device_list( devlist, 1 ) ;
-    return NULL ;
+    return false ;
 }
 
 SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
-	/* Default (startup) state */
+    /* Default (startup) state */
 
-	_sample_rate(50e3),
-	_bandwidth(40e3),
+    _sample_rate(50e3),
+    _bandwidth(40e3),
 
-	_RX_FREQ(0.0),
-	_freq_corr(0.0),
-	_antenna("RX BNC LPF")
+    _RX_FREQ(0.0),
+    _freq_corr(0.0),
+    _antenna("RX BNC LPF"),
+    _ticks(0)
 {
 
-	if (args.count("label") != 0)
-		SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
+    if (args.count("label") != 0)
+        SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
 
-/*
-	_rx_stream.vga_gain=16;
-	_rx_stream.lna_gain=16;
-	_rx_stream.amp_gain=0;
-	_rx_stream.frequency=0;
-	_rx_stream.samplerate=0;
-	_rx_stream.bandwidth=0;
-	_rx_stream.overflow = false;
+    /* Open the QS1R by matching serial number or index */
+    if (args.count("serial") == 0)
+        throw std::runtime_error("no QS1r device matches");
+    _serial = args.at("serial");
 
-	_tx_stream.vga_gain=0;
-	_tx_stream.amp_gain=0;
-	_tx_stream.frequency=0;
-	_tx_stream.samplerate=0;
-	_tx_stream.bandwidth=0;
-	_tx_stream.burst_samps=0;
-	_tx_stream.burst_end=false;
-	_tx_stream.underflow = false;
+    if ( !qs1r_by_serial(_serial.c_str()) && !qs1r_by_index( args.at("index").c_str()) )
+    {
+        throw std::runtime_error("no QS1r device matches");
+    }
 
-	_current_mode=HACKRF_TRANSCEIVER_MODE_OFF;
+    /* Check so see if firmware loaded */
+    if ( ! configure_device( ) ) {
+            throw std::runtime_error("Cannot set QS1R usb configuration");
+    }
 
-	_auto_bandwidth=true;
-*/
-
-	/* Open the QS1R by matching serial number or index */
-	if (args.count("serial") == 0)
-		throw std::runtime_error("no QS1r device matches");
-	_serial = args.at("serial");
-
-	_dev = qs1r_by_serial(_serial.c_str());
-	if ( _dev == NULL )
-	{
-		_dev = qs1r_by_index( args.at("index").c_str()) ;
-		if ( _dev == NULL ) {
-			throw std::runtime_error("no QS1r device matches");
-		}
-	}
+    uint32_t sn = 0 ;
+    uint32_t fw = 0 ;
+    if ( ! get_firmware_sn( &sn )
+        || sn!=3032011
+        || ! read_multibus( DDC_VERSION_REG, &fw )
+        || fw != 0x7192011
+        ) {
+        if ( load_device()
+            && get_firmware_sn( &sn )
+            && read_multibus( DDC_VERSION_REG, &fw )
+            ) {
+                // Load into devInfo
+                // Set description fields
+                SoapySDR::Kwargs devInfo;
+                char buf[20] ;
+                snprintf( buf, 20, "%08d",sn) ;
+                devInfo["SerialNumber"]=buf;
+                snprintf( buf, 20, "%08x",fw) ;
+                devInfo["Firmware"]=buf;
+                printf( "Successful QS1R opening: SN %0d, FW %0X\n",sn,fw);
+        } else {
+            throw std::runtime_error("Cannot load QS1R firmware or code");
+        }
+    }
 }
 
 SoapyQS1R::~SoapyQS1R( void )
 {
-	if ( _dev )
-	{
-		libusb_close( _dev );
-	}
+        if ( _dev )
+        {
+                libusb_close( _dev );
+        }
 
-	/* cleanup device handles */
+        /* cleanup device handles */
 }
 
 
@@ -148,25 +151,25 @@ SoapyQS1R::~SoapyQS1R( void )
 
 std::string SoapyQS1R::getDriverKey( void ) const
 {
-	return("QS1R");
+        return("QS1R");
 }
 
 
 std::string SoapyQS1R::getHardwareKey( void ) const
 {
-	return "LTC2208" ;
+        return "LTC2208" ;
 }
 
 
 SoapySDR::Kwargs SoapyQS1R::getHardwareInfo( void ) const
 {
-	SoapySDR::Kwargs info;
+        SoapySDR::Kwargs info;
 
-	info["origin"] = "https://github.com/alfille/SoapyQS1R" ;
-	info["ADC"] = "LTC2208";
-	
+        info["origin"] = "https://github.com/alfille/SoapyQS1R" ;
+        info["ADC"] = "LTC2208";
+        
 
-	return(info);
+        return(info);
 
 }
 
@@ -177,13 +180,13 @@ SoapySDR::Kwargs SoapyQS1R::getHardwareInfo( void ) const
 
 size_t SoapyQS1R::getNumChannels( const int dir ) const
 {
-	return(1);
+        return(1);
 }
 
 
 bool SoapyQS1R::getFullDuplex( const int direction, const size_t channel ) const
 {
-	return(false);
+        return(false);
 }
 
 /*******************************************************************
@@ -255,39 +258,39 @@ SoapySDR::ArgInfoList SoapyQS1R::getSettingInfo(void) const
 
 void SoapyQS1R::writeSetting(const std::string &key, const std::string &value)
 {
-	if(key=="dithering") {
-		QS1R_putbit( _dev, DDC_CONTROL_REG1, ADC_DITHER_ENABLE, value=="true"?1:0 ) ;
-	} else if (key=="randomizing") {
-		QS1R_putbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, value=="true"?1:0 ) ;
-	} else if (key=="gain") {
-		QS1R_putbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, value=="high"?1:0 ) ;
-	} else if (key=="bypass") {
-		QS1R_putbit( _dev, DDC_CONTROL_REG0, DAC_BYPASS, value=="true"?1:0 ) ;
-	} else if (key=="muting") {
-		QS1R_putbit( _dev, DDC_CONTROL_REG0, DAC_EXT_MUTE_ENABLE, value=="true"?1:0 ) ;
-	} else if (key=="clock") {
-		QS1R_putbit( _dev, DDC_CONTROL_REG0, DAC_CLOCK_SELECT, value=="48"?1:0 ) ;
-	}
+        if(key=="dithering") {
+                DDC_putbit( DDC_CONTROL_REG1, ADC_DITHER_ENABLE, value=="true"?1:0 ) ;
+        } else if (key=="randomizing") {
+                DDC_putbit( DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, value=="true"?1:0 ) ;
+        } else if (key=="gain") {
+                DDC_putbit( DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, value=="high"?1:0 ) ;
+        } else if (key=="bypass") {
+                DDC_putbit( DDC_CONTROL_REG0, DAC_BYPASS, value=="true"?1:0 ) ;
+        } else if (key=="muting") {
+                DDC_putbit( DDC_CONTROL_REG0, DAC_EXT_MUTE_ENABLE, value=="true"?1:0 ) ;
+        } else if (key=="clock") {
+                DDC_putbit( DDC_CONTROL_REG0, DAC_CLOCK_SELECT, value=="48"?1:0 ) ;
+        }
 
 }
 
 std::string SoapyQS1R::readSetting(const std::string &key) const
 {
-	int value ;
-	if(key=="dithering" && QS1R_getbit( _dev, DDC_CONTROL_REG1, ADC_DITHER_ENABLE, &value ) ) {
-		return ((value==1) ? "true" : "false") ;
-	} else if (key=="randomizing" && QS1R_getbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, &value ) ) {
-		return ((value==1) ? "true" : "false") ;
-	} else if (key=="gain" && QS1R_getbit( _dev, DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, &value ) ) {
-		return ((value==1) ? "high" : "low") ;
-	} else if (key=="bypass" && QS1R_getbit( _dev, DDC_CONTROL_REG0, DAC_BYPASS, &value ) ) {
-		return ((value==1) ? "true" : "false") ;
-	} else if (key=="muting" && QS1R_getbit( _dev, DDC_CONTROL_REG0, DAC_EXT_MUTE_ENABLE, &value ) ) {
-		return ((value==1) ? "true" : "false") ;
-	} else if (key=="clock" && QS1R_getbit( _dev, DDC_CONTROL_REG0, DAC_CLOCK_SELECT, &value ) ) {
-		return ((value==1) ? "48" : "24") ;
-	}
-	return "";
+    int value ;
+    if ( key=="dithering" && DDC_getbit( DDC_CONTROL_REG1, ADC_DITHER_ENABLE, &value ) ) {
+        return ((value==1) ? "true" : "false") ;
+    } else if (key=="randomizing" && DDC_getbit( DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, &value ) ) {
+        return ((value==1) ? "true" : "false") ;
+    } else if (key=="gain" && DDC_getbit( DDC_CONTROL_REG1, ADC_RANDOMIZER_ENABLE, &value ) ) {
+        return ((value==1) ? "high" : "low") ;
+    } else if (key=="bypass" && DDC_getbit( DDC_CONTROL_REG0, DAC_BYPASS, &value ) ) {
+        return ((value==1) ? "true" : "false") ;
+    } else if (key=="muting" && DDC_getbit( DDC_CONTROL_REG0, DAC_EXT_MUTE_ENABLE, &value ) ) {
+        return ((value==1) ? "true" : "false") ;
+    } else if (key=="clock" && DDC_getbit( DDC_CONTROL_REG0, DAC_CLOCK_SELECT, &value ) ) {
+        return ((value==1) ? "48" : "24") ;
+    }
+    return "";
 }
 
 /*******************************************************************
@@ -296,17 +299,17 @@ std::string SoapyQS1R::readSetting(const std::string &key) const
 
 std::vector<std::string> SoapyQS1R::listAntennas( const int direction, const size_t channel ) const
 {
-	std::vector<std::string> options;
-	options.push_back( "RX BNC LPF" );
-	options.push_back( "RX SMA" );
-	return(options);
+    std::vector<std::string> options;
+    options.push_back( "RX BNC LPF" );
+    options.push_back( "RX SMA" );
+    return(options);
 }
 
 
 void SoapyQS1R::setAntenna( const int direction, const size_t channel, const std::string &name )
 {
-	if (direction == SOAPY_SDR_RX) {
-		_antenna = name ;
+    if (direction == SOAPY_SDR_RX) {
+        _antenna = name ;
     } else {
         throw std::runtime_error("setAntenna failed: QS1R only supports RX");
     }
@@ -315,7 +318,7 @@ void SoapyQS1R::setAntenna( const int direction, const size_t channel, const std
 
 std::string SoapyQS1R::getAntenna( const int direction, const size_t channel ) const
 {
-	return(_antenna);
+    return(_antenna);
 }
 
 
@@ -335,36 +338,36 @@ std::string SoapyQS1R::getAntenna( const int direction, const size_t channel ) c
 
 void SoapyQS1R::setFrequency( const int direction, const size_t channel, const std::string &name, const double frequency, const SoapySDR::Kwargs &args )
 {
-	if ( name == "RF" ) {
-		uint32_t f = DDC_FREQ( frequency ) ;
-		if ( QS1R_write_multibus( _dev, DDC_FREQ_REG, f ) ) {
-			_RX_FREQ = frequency ;
-		}
-	} else if ( name == "CORR" ) {
-		_freq_corr = frequency ;
-		setFrequency( direction, channel, "RF", _RX_FREQ, args ) ;
-	} else {
-		throw std::runtime_error( "setFrequency(" + name + ") unknown name" );
-	}
+    if ( name == "RF" ) {
+    uint32_t f = DDC_FREQ( frequency ) ;
+        if ( write_multibus( DDC_FREQ_REG, f ) ) {
+            _RX_FREQ = frequency ;
+        }
+    } else if ( name == "CORR" ) {
+        _freq_corr = frequency ;
+        setFrequency( direction, channel, "RF", _RX_FREQ, args ) ;
+    } else {
+        throw std::runtime_error( "setFrequency(" + name + ") unknown name" );
+    }
 }
 
 
 double SoapyQS1R::getFrequency( const int direction, const size_t channel, const std::string &name ) const
 {
-	if ( name == "RF" ) {
-		return _RX_FREQ ;
-	} else if ( name == "CORR" ) {
-		return _freq_corr ;
-	} else {
-		return 0.0 ;
-	}
+    if ( name == "RF" ) {
+        return _RX_FREQ ;
+    } else if ( name == "CORR" ) {
+        return _freq_corr ;
+    } else {
+        return 0.0 ;
+    }
 }
 
 SoapySDR::ArgInfoList SoapyQS1R::getFrequencyArgsInfo(const int direction, const size_t channel) const
 {
-	SoapySDR::ArgInfoList freqArgs;
-	// TODO: frequency arguments
-	return freqArgs;
+    SoapySDR::ArgInfoList freqArgs;
+    // TODO: frequency arguments
+    return freqArgs;
 }
 
 std::vector<std::string> SoapyQS1R::listFrequencies( const int direction, const size_t channel ) const
@@ -380,16 +383,14 @@ SoapySDR::RangeList SoapyQS1R::getFrequencyRange( const int direction, const siz
 {
     SoapySDR::RangeList results;
     if ( name == "RF" ) {
-		if (_antenna == "RX BNC LPF")
-		{
-			results.push_back(SoapySDR::Range(15000, 55000000));
-		} else if (_antenna == "RX SMA")
-		{
-			results.push_back(SoapySDR::Range(15000, 300000000));
-		}
-	} else if (name == "CORR" ) {
-		results.push_back(SoapySDR::Range(-50000, 50000));
-	}
+        if (_antenna == "RX BNC LPF") {
+            results.push_back(SoapySDR::Range(15000, 55000000));
+        } else if (_antenna == "RX SMA") {
+            results.push_back(SoapySDR::Range(15000, 300000000));
+        }
+    } else if (name == "CORR" ) {
+        results.push_back(SoapySDR::Range(-50000, 50000));
+    }
     return results;
 }
 
@@ -400,116 +401,116 @@ SoapySDR::RangeList SoapyQS1R::getFrequencyRange( const int direction, const siz
 
 void SoapyQS1R::setSampleRate( const int direction, const size_t channel, const double rate )
 {
-	std::lock_guard<std::mutex> lock(_device_mutex);
+    std::lock_guard<std::mutex> lock(_device_mutex);
 
-	if(direction==SOAPY_SDR_RX){
-		if ( rate <= 25e3 ) {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,   25000 ) ) {
-				_sample_rate = 25e3;
-				_bandwidth = 40e3 ;
-			}
-		} else if ( rate <= 50e3 ) {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,   50000 ) ) {
-				_sample_rate = 50e3 ;
-				_bandwidth = 40e3 ;
-			}
-		} else if ( rate <= 125e3 ) {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,  125000 ) ) {
-				_sample_rate = 125e3 ;
-				_bandwidth = 100e3 ;
-			}
-		} else if ( rate <= 250e3 ) {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,  250000 ) ) {
-				_sample_rate = 250e3 ;
-				_bandwidth = 200e3 ;
-			}
-		} else if ( rate <= 625e3 ) {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG,  625000 ) ) {
-				_sample_rate = 625e3 ;
-				_bandwidth = 500e3 ;
-			}
-		} else if ( rate <= 1250e3 ) {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG, 1250000 ) ) {
-				_sample_rate = 1250e3 ;
-				_bandwidth = 1000e3 ;
-			}
-		} else if ( rate <= 1562.5e3 ) {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG, 1562500 ) ) {
-				_sample_rate = 1562.5e3 ;
-				_bandwidth = 1200e3 ;
-			}
-		} else {
-			if ( QS1R_write_multibus( _dev, DDC_SAMPLE_RATE_REG, 2500000 ) ) {
-				_sample_rate = 2500e3 ;
-				_bandwidth = 2000e3 ;
-			}
-		}
-	}
+    if(direction==SOAPY_SDR_RX){
+        if ( rate <= 25e3 ) {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG,   25000 ) ) {
+                _sample_rate = 25e3;
+                _bandwidth = 40e3 ;
+            }
+        } else if ( rate <= 50e3 ) {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG,   50000 ) ) {
+                _sample_rate = 50e3 ;
+                _bandwidth = 40e3 ;
+            }
+        } else if ( rate <= 125e3 ) {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG,  125000 ) ) {
+                _sample_rate = 125e3 ;
+                _bandwidth = 100e3 ;
+            }
+        } else if ( rate <= 250e3 ) {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG,  250000 ) ) {
+                _sample_rate = 250e3 ;
+                _bandwidth = 200e3 ;
+            }
+        } else if ( rate <= 625e3 ) {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG,  625000 ) ) {
+                _sample_rate = 625e3 ;
+                _bandwidth = 500e3 ;
+            }
+        } else if ( rate <= 1250e3 ) {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG, 1250000 ) ) {
+                _sample_rate = 1250e3 ;
+                _bandwidth = 1000e3 ;
+            }
+        } else if ( rate <= 1562.5e3 ) {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG, 1562500 ) ) {
+                _sample_rate = 1562.5e3 ;
+                _bandwidth = 1200e3 ;
+            }
+        } else {
+            if ( write_multibus( DDC_SAMPLE_RATE_REG, 2500000 ) ) {
+                _sample_rate = 2500e3 ;
+                _bandwidth = 2000e3 ;
+            }
+        }
+    }
 }
 
 
 double SoapyQS1R::getSampleRate( const int direction, const size_t channel ) const
 {
-	std::lock_guard<std::mutex> lock(_device_mutex);
-	return(_sample_rate);
+    std::lock_guard<std::mutex> lock(_device_mutex);
+    return(_sample_rate);
 }
 
 
 std::vector<double> SoapyQS1R::listSampleRates( const int direction, const size_t channel ) const
 {
-	std::vector<double> options;
-	options.push_back(   25e3 );
-	options.push_back(   50e3 );
-	options.push_back(  125e3 );
-	options.push_back(  250e3 );
-	options.push_back(  625e3 );
-	options.push_back( 1250e3 );
-	options.push_back( 1562.5e3 );
-	options.push_back( 2500e3 );
-	return(options);
+    std::vector<double> options;
+    options.push_back(   25e3 );
+    options.push_back(   50e3 );
+    options.push_back(  125e3 );
+    options.push_back(  250e3 );
+    options.push_back(  625e3 );
+    options.push_back( 1250e3 );
+    options.push_back( 1562.5e3 );
+    options.push_back( 2500e3 );
+    return(options);
 }
 
 
 void SoapyQS1R::setBandwidth( const int direction, const size_t channel, const double bw )
 {
-	double sr ;
-	if ( bw <= 20e3 ) {
-		sr = 25e3 ;
-	} else if ( bw <= 40e3 ) {
-		sr = 50e3 ;
-	} else if ( bw <= 100e3 ) {
-		sr = 125e3 ;
-	} else if ( bw <= 200e3 ) {
-		sr = 250e3 ;
-	} else if ( bw <= 500e3 ) {
-		sr = 625e3 ;
-	} else if ( bw <= 1000e3 ) {
-		sr = 1250e3 ;
-	} else if ( bw <= 1200e3 ) {
-		sr = 1562.5e3 ;
-	} else {
-		sr = 2000e3 ;
-	}
-	setSampleRate( direction, channel, sr ) ;
+    double sr ;
+    if ( bw <= 20e3 ) {
+        sr = 25e3 ;
+    } else if ( bw <= 40e3 ) {
+        sr = 50e3 ;
+    } else if ( bw <= 100e3 ) {
+        sr = 125e3 ;
+    } else if ( bw <= 200e3 ) {
+        sr = 250e3 ;
+    } else if ( bw <= 500e3 ) {
+        sr = 625e3 ;
+    } else if ( bw <= 1000e3 ) {
+        sr = 1250e3 ;
+    } else if ( bw <= 1200e3 ) {
+        sr = 1562.5e3 ;
+    } else {
+        sr = 2000e3 ;
+    }
+    setSampleRate( direction, channel, sr ) ;
 }
 
 
 double SoapyQS1R::getBandwidth( const int direction, const size_t channel ) const
 {
-	return (_bandwidth);
+    return (_bandwidth);
 }
 
 
 std::vector<double> SoapyQS1R::listBandwidths( const int direction, const size_t channel ) const
 {
-	std::vector<double> options;
-	options.push_back( 20e3 );
-	options.push_back( 40e3 );
-	options.push_back( 100e3 );
-	options.push_back( 200e3 );
-	options.push_back( 500e3 );
-	options.push_back( 1000e3 );
-	options.push_back( 1200e3 );
-	options.push_back( 2000e3 );
-	return(options);
+    std::vector<double> options;
+    options.push_back( 20e3 );
+    options.push_back( 40e3 );
+    options.push_back( 100e3 );
+    options.push_back( 200e3 );
+    options.push_back( 500e3 );
+    options.push_back( 1000e3 );
+    options.push_back( 1200e3 );
+    options.push_back( 2000e3 );
+    return(options);
 }

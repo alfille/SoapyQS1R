@@ -21,7 +21,7 @@
 
 #include "SoapyQS1R.hpp"
 
-static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
+//static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
 
 
 static std::vector<SoapySDR::Kwargs> findQS1R(const SoapySDR::Kwargs &args)
@@ -31,57 +31,47 @@ static std::vector<SoapySDR::Kwargs> findQS1R(const SoapySDR::Kwargs &args)
     std::vector<SoapySDR::Kwargs> results;
 
     libusb_device ** devlist ;
-    ssize_t usb_count = libusb_get_device_list( qs1r_context, &devlist ) ;
+    ssize_t usb_count = libusb_get_device_list( SoapyQS1RSession::qs1r_context, &devlist ) ;
 
     int index = 0 ;
 
-	for ( auto i =0 ; i < usb_count ; ++i ) {
-		struct libusb_device_descriptor desc ;
-		libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
-		if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
-			libusb_device_handle * dev ;
-			if ( libusb_open( devlist[i], &dev ) == 0 ) {
-				if ( QS1R_initialize_device( dev ) ) {
-					// USB configured
-					// hex code uploaded
-					// FPGA loaded
+    for ( auto i =0 ; i < usb_count ; ++i ) {
+        struct libusb_device_descriptor desc ;
+        libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
+        if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
+            libusb_device_handle * dev ;
+            if ( libusb_open( devlist[i], &dev ) == 0 ) {
 
-					// Set description fields
-					SoapySDR::Kwargs devInfo;
+                // Set description fields
+                SoapySDR::Kwargs devInfo;
 
-					unsigned char adevice[256] ;
-					libusb_get_string_descriptor_ascii( dev, desc.iProduct, adevice, 256 ) ;
-					devInfo["product"] = (char *) adevice ;
+                unsigned char adevice[256] ;
+                libusb_get_string_descriptor_ascii( dev, desc.iProduct, adevice, 256 ) ;
+                devInfo["product"] = (char *) adevice ;
 
-					unsigned char aserial[256] ;
-					libusb_get_string_descriptor_ascii( dev, desc.iSerialNumber, aserial, 256 ) ;
-					devInfo["serial"] = (char *) aserial;
+                unsigned char aserial[256] ;
+                libusb_get_string_descriptor_ascii( dev, desc.iSerialNumber, aserial, 256 ) ;
+                devInfo["serial"] = (char *) aserial;
 
-					unsigned char amanf[256] ;
-					libusb_get_string_descriptor_ascii( dev, desc.iManufacturer, amanf, 256 ) ;
-					devInfo["manufacturer"] = (char *) amanf;
+                unsigned char amanf[256] ;
+                libusb_get_string_descriptor_ascii( dev, desc.iManufacturer, amanf, 256 ) ;
+                devInfo["manufacturer"] = (char *) amanf;
 
-					char aindex[256] ;
-					sprintf( aindex, "%d", index ) ;
-					devInfo["index"] = (char *) aindex;
-					++index ;
+                char aindex[256] ;
+                sprintf( aindex, "%d", index ) ;
+                devInfo["index"] = (char *) aindex;
+                ++index ;
 
-					char afirm[256] ;
-					if ( QS1R_firmware_sn( dev, afirm, 256 ) ) {
-						devInfo["firmware"] = (char *) afirm;
-					}
+                char alabel[256] ;
+                sprintf( alabel, "QS1R %s on <%d:%d>", aserial, libusb_get_bus_number(devlist[i]), libusb_get_port_number(devlist[i]) );
+                devInfo["label"] = alabel ;
 
-					char alabel[256] ;
-					sprintf( alabel, "QS1R %s on <%d:%d>", aserial, libusb_get_bus_number(devlist[i]), libusb_get_port_number(devlist[i]) );
-					devInfo["label"] = alabel ;
+                libusb_close( dev ) ;
 
-					libusb_close( dev ) ;
-
-					results.push_back(devInfo) ;
-				}
-			}
-		}
-	}
+                results.push_back(devInfo) ;
+            }
+        }
+    }
     libusb_free_device_list( devlist, 1 ) ;
 
     return results;

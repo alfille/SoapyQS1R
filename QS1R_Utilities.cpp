@@ -24,229 +24,676 @@
 
 // All routines are true if successful, else false on error
 
-bool ram_write( libusb_device_handle * dev, int ram_address, unsigned char * buffer, int length ) ;
-bool cpu_reset( libusb_device_handle * dev, int state ) ;
-bool firmware_write( libusb_device_handle * dev, const char * filename ) ;
-bool firmware_line( libusb_device_handle * dev, char * line ) ;
-bool firmware_line_type0( libusb_device_handle * dev, char * line, int flength, int faddr ) ;
-bool FPGA_write( libusb_device_handle * dev, const char * filename ) ;
-bool FPGA_control( libusb_device_handle * dev, int state ) ;
-bool FPGA_packet( libusb_device_handle * dev, FILE * rbf ) ;
-bool bulk_write_EP( libusb_device_handle * dev, int ep, unsigned char * buffer, int length ) ;
-
-bool QS1R_initialize_device( libusb_device_handle * dev ) {
-	return (libusb_set_configuration( dev, 1 )==0)
-	    && (libusb_claim_interface( dev, 0 )==0)
-	    && (libusb_set_interface_alt_setting( dev, 0, 0 )==0)
-	    && (libusb_clear_halt( dev, QS1R_EP2 & 0x0F )==0)
-	    && (libusb_clear_halt( dev, QS1R_EP4 & 0x0F )==0)
-	    && (libusb_clear_halt( dev, QS1R_EP6 & 0x0F )==0)
-	    && (libusb_clear_halt( dev, QS1R_EP8 & 0x0F )==0)
-		&& firmware_write( dev, "firmware/qs1r_firmware_03032011.hex" )
-		&& FPGA_write( dev, "firmware/QS1R_WINRAD_04112011.rbf" ) ;
+bool SoapyQS1R::configure_device( void ) {
+    return (libusb_set_configuration( _dev, 1 )==0)
+        && (libusb_claim_interface( _dev, 0 )==0)
+        && (libusb_set_interface_alt_setting( _dev, 0, 0 )==0)
+        && (libusb_clear_halt( _dev, QS1R_EP2 & 0x0F )==0)
+        && (libusb_clear_halt( _dev, QS1R_EP4 & 0x0F )==0)
+        && (libusb_clear_halt( _dev, QS1R_EP6 & 0x0F )==0)
+        && (libusb_clear_halt( _dev, QS1R_EP8 & 0x0F )==0) ;
 }
 
-bool ram_write( libusb_device_handle * dev, int ram_address, unsigned char * buffer, int length ) {
-	// write the the FX2 CPU's ram
-	int pkt_size = MAX_EP0_PACKET_SIZE ;
-	int this_address = ram_address;
-	unsigned char * this_buffer = buffer ;
-
-	for ( int remaining = length ; remaining > 0 ; remaining -= pkt_size ) {
-		if (pkt_size > remaining ) {
-			pkt_size = remaining ;
-		} 
-		int sent = libusb_control_transfer( dev,
-			VRT_VENDOR_OUT,
-			FX2_WRITE_RAM_REQ,
-			this_address,
-			0,
-			this_buffer,
-			pkt_size,
-			USB_TIMEOUT_CONTROL );
-		if ( sent != pkt_size ) {
-			return false ;
-		}
-		this_address += sent ;
-		this_buffer += sent ;
-	}
-	return true ;
+bool SoapyQS1R::load_device( void ) {
+    return (firmware_write( "firmware/qs1r_firmware_03032011.hex" )
+        && FPGA_write( "firmware/QS1R_WINRAD_04112011.rbf" ) );
 }
 
-bool cpu_reset( libusb_device_handle * dev, int state ) {
-	// State 1=reset, 0=normal
-	unsigned char s = state ;
-	return ram_write( dev, FX2_RAM_RESET, &s, 1 ) ;
+bool SoapyQS1R::ram_write( int ram_address, unsigned char * buffer, int length ) {
+    // write the the FX2 CPU's ram
+    int pkt_size = MAX_EP0_PACKET_SIZE ;
+    int this_address = ram_address;
+    unsigned char * this_buffer = buffer ;
+
+    for ( int remaining = length ; remaining > 0 ; remaining -= pkt_size ) {
+        if (pkt_size > remaining ) {
+            pkt_size = remaining ;
+        } 
+        int sent = libusb_control_transfer( _dev,
+            VRT_VENDOR_OUT,
+            FX2_WRITE_RAM_REQ,
+            this_address,
+            0,
+            this_buffer,
+            pkt_size,
+            USB_TIMEOUT_CONTROL );
+        if ( sent != pkt_size ) {
+            return false ;
+        }
+        this_address += sent ;
+        this_buffer += sent ;
+    }
+    return true ;
 }
 
-bool firmware_write( libusb_device_handle * dev, const char * filename ) {
-	FILE * firm = fopen( filename, "r" ) ;
-	if ( firm == NULL ) {
-		SoapySDR::logf(SOAPY_SDR_ERROR, "Cannot open firmware file -- %s", filename);
-		return false ;
-	}
-
-	bool ret = cpu_reset( dev, 1 ) ;
-	
-	if ( ret ) {
-		while ( !feof(firm) ) {
-			char line[1024] ;
-			fgets( line, 1024, firm ) ;
-			if ( ! firmware_line( dev, line ) ) {
-				ret = false ;
-				break ;
-			}
-		}
-	}
-
-	ret = cpu_reset( dev, 0 ) && ret ; // always do
-
-	fclose( firm ) ;
-	return ret ;
+bool SoapyQS1R::cpu_reset( int state ) {
+    // State 1=reset, 0=normal
+    unsigned char s = state ;
+    return ram_write( FX2_RAM_RESET, &s, 1 ) ;
 }
 
-bool firmware_line( libusb_device_handle * dev, char * line ) {
-	char c;
-	int flength ;
-	int faddr ;
-	int ftype ;
+bool SoapyQS1R::firmware_write( const char * filename ) {
+    FILE * firm = fopen( filename, "r" ) ;
+    if ( firm == NULL ) {
+        SoapySDR::logf(SOAPY_SDR_ERROR, "Cannot open firmware file -- %s", filename);
+        return false ;
+    }
 
-	sscanf( s, "%c%02x%04x%02x", &c, &flength, %faddr, &type ) ;
-	if ( c != ':' ) {
-		return false ; // no initial ':'
-	}
-	switch ( ftype ) {
-		case 0: // only type used
-			return firmware_line_type0( dev, line+9, flength, faddr ) ;
-		case 1:
-			// ignore
-			return true ;
-		case 2:
-			// unsupported extended address
-			return false ;
-		default:
-			// unknown
-			return true ;
-	}
+    bool ret = cpu_reset( 1 ) ;
+    
+    if ( ret ) {
+        while ( !feof(firm) ) {
+            char line[1024] ;
+            fgets( line, 1024, firm ) ;
+            if ( ! firmware_line( line ) ) {
+                ret = false ;
+                break ;
+            }
+        }
+    }
+
+    ret = cpu_reset( 0 ) && ret ; // always do
+
+    fclose( firm ) ;
+    return ret ;
 }
 
-bool firmware_line_type0( libusb_device_handle * dev, char * line, int flength, int faddr ) {
-	// note: line has header removed (9 chars)
-	unsigned char data[256] ;
-	unsigned char running_sum = flength + (faddr & 0xff) + (faddr>>8) + 0 ; // first 4 bytes (header)
+bool SoapyQS1R::firmware_line( char * line ) {
+    char c;
+    int flength ;
+    int faddr ;
+    int ftype ;
 
-	for ( int i = 0 ; i <= flength ; ++i ) { // 1 extra for checksum
-		unsigned int b ;
-		sscanf( "%02x", line+2*i, &b ) ;
-		data[i] = b ;
-		running_sum += data[i] ;
-	}
-
-	if ( running_sum != 0x00 ) {
-		// bad checksum
-		return false ;
-	}
-
-	return ram_write( dev, faddr, data, flength ) ;
+    sscanf( line, "%c%02x%04x%02x", &c, &flength, &faddr, &type ) ;
+    if ( c != ':' ) {
+        return false ; // no initial ':'
+    }
+    switch ( ftype ) {
+        case 0: // only type used
+            return firmware_line_type0( line+9, flength, faddr ) ;
+        case 1:
+            // ignore
+            return true ;
+        case 2:
+            // unsupported extended address
+            return false ;
+        default:
+            // unknown
+            return true ;
+    }
 }
 
-bool FPGA_write( libusb_device_handle * dev, const char * filename ) {
-	FILE * rbf = fopen( filename, "rb" ) ;
-	if ( rbf == NULL ) {
-		SoapySDR::logf(SOAPY_SDR_ERROR, "Cannot open FPGA file -- %s", filename);
-		return false ;
-	}
+bool SoapyQS1R::firmware_line_type0( char * line, int flength, int faddr ) {
+    // note: line has header removed (9 chars)
+    unsigned char data[256] ;
+    unsigned char running_sum = flength + (faddr & 0xff) + (faddr>>8) + 0 ; // first 4 bytes (header)
 
-	bool ret = FPGA_control( dev, FL_BEGIN ) && FPGA_packet( dev, rbf ) ;
+    for ( int i = 0 ; i <= flength ; ++i ) { // 1 extra for checksum
+        unsigned int b ;
+        sscanf( "%02x", line+2*i, &b ) ;
+        data[i] = b ;
+        running_sum += data[i] ;
+    }
 
-	ret = FPGA_control( dev, FL_END ) && ret ; // run anyways
+    if ( running_sum != 0x00 ) {
+        // bad checksum
+        return false ;
+    }
 
-	fclose( rbf ) ;
-	return ret ;
+    return ram_write( faddr, data, flength ) ;
 }
 
-bool FPGA_packet( libusb_device_handle * dev, FILE * rbf ) {
-	unsigned char buffer[ MAX_EP4_PACKET_SIZE ];
-	while ( (size_t length = fread( buffer, 1, sizeof(buffer), rbf )) > 0 ) {
-		if ( ! bulk_write_EP( dev, QS1R_EP2, buffer, length ) ) {
-			// Error writing FPGA
-			return false ;
-		}
-	}
-	return true ;
+bool SoapyQS1R::FPGA_write( const char * filename ) {
+    FILE * rbf = fopen( filename, "rb" ) ;
+    if ( rbf == NULL ) {
+        SoapySDR::logf(SOAPY_SDR_ERROR, "Cannot open FPGA file -- %s", filename);
+        return false ;
+    }
+
+    bool ret = FPGA_control( FL_BEGIN ) && FPGA_packet( rbf ) ;
+
+    ret = FPGA_control( FL_END ) && ret ; // run anyways
+
+    fclose( rbf ) ;
+    return ret ;
 }
 
-bool FPGA_control( libusb_device_handle * dev, int state ) {
-	return libusb_control_transfer( dev, VRT_VENDOR_OUT,
-             VRQ_FPGA_LOAD, 0, state, 0, 0,
-             USB_TIMEOUT_CONTROL ) == 0 ;
+bool SoapyQS1R::FPGA_packet( FILE * rbf ) {
+    unsigned char buffer[ MAX_EP4_PACKET_SIZE ];
+    while ( (size_t length = fread( buffer, 1, sizeof(buffer), rbf )) > 0 ) {
+        if ( ! bulk_write_EP( QS1R_EP2, buffer, length ) ) {
+            // Error writing FPGA
+            fprintf( stderr, "FPGA error writing line %s\n", buffer ) ;
+            return false ;
+        }
+    }
+    return true ;
 }
 
-bool bulk_write_EP( libusb_device_handle * dev, int ep, unsigned char * buffer, int length )
+bool SoapyQS1R::FPGA_control( int state ) {
+    return libusb_control_transfer( _dev, VRT_VENDOR_OUT,
+        VRQ_FPGA_LOAD, 0, state, 0, 0,
+        USB_TIMEOUT_CONTROL ) == 0 ;
+}
+
+bool SoapyQS1R::bulk_write_EP( int ep, unsigned char * buffer, int length )
 {
-	int transfered ;
-	if ( libusb_bulk_transfer( dev, ep, buffer, length, &transfered, USB_TIMEOUT_BULK ) != 0 ) {
-		// error
-		libusb_clear_halt( dev, ep & 0x0F ) ;
-		return false ;
-	}
-	return transfered==length ;
+    int transfered ;
+    if ( libusb_bulk_transfer( _dev, ep, buffer, length, &transfered, USB_TIMEOUT_BULK ) != 0 ) {
+        // error
+        libusb_clear_halt( _dev, ep & 0x0F ) ;
+        return false ;
+    }
+    return transfered==length ;
 }
 
-// Strangely Covinton's code uses a special code for this. We'll try standard multibus read
-bool QS1R_firmware_sn( libusb_device_handle * dev, char * sn, int sn_leng)
+bool SoapyQS1R::get_firmware_sn( uint32_t * value )
 {
-	uint32_t value ;
-	if ( QS1R_read_multibus( dev, DDC_VERSION_REG, &value ) ) {
-		snprintf( sn, sn_leng, "%u", value ) ;
-		return true ;
-	}
-	return false ;
+    unsigned char * buf[4] ;
+    if ( libusb_control_transfer( _dev, VRT_VENDOR_IN, VRQ_SN_READ,
+       0, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
+       return false ;
+    }
+    * value = (uint32_t) buf[3] << 24 | (uint32_t) buf[2] << 16 | (uint32_t) buf[1] << 8 | (uint32_t) buf[0] ) ;
+    return true ;
 }
 
-bool QS1R_read_multibus( libusb_device_handle * dev, int index, uint32_t * value)
+bool SoapyQS1R::read_multibus( int index, uint32_t * value)
 {
-	unsigned char * buf[4] ;
-	if ( libusb_control_transfer( dev, VRT_VENDOR_IN, VRQ_MULTI_READ,
-           index, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
-			   return false ;
-   }
-	*value = (uint32_t) buf[3] << 24 | (uint32_t) buf[2] << 16 | (uint32_t) buf[1] << 8 | (uint32_t) buf[0] ) ;
-	return true ;
+    unsigned char * buf[4] ;
+    if ( libusb_control_transfer( _dev, VRT_VENDOR_IN, VRQ_MULTI_READ,
+       index, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
+       return false ;
+    }
+    *value = (uint32_t) buf[3] << 24 | (uint32_t) buf[2] << 16 | (uint32_t) buf[1] << 8 | (uint32_t) buf[0] ) ;
+    return true ;
 }
 
-bool QS1R_write_multibus( libusb_device_handle * dev, int index, uint32_t value)
+bool SoapyQS1R::write_multibus( int index, uint32_t value)
 {
-	unsigned char * buf[4] ;
-	buf[0] = value & 0xFF ;
-	buf[1] = (value>>8) & 0xFF ;
-	buf[2] = (value>>16) & 0xFF ;
-	buf[3] = (value>>24) & 0xFF ;
-	if ( libusb_control_transfer( dev, VRT_VENDOR_OUT, VRQ_MULTI_WRITE,
-           index, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
-			   return false ;
-   }
-	return true ;
+    unsigned char * buf[4] ;
+    buf[0] = value & 0xFF ;
+    buf[1] = (value>>8) & 0xFF ;
+    buf[2] = (value>>16) & 0xFF ;
+    buf[3] = (value>>24) & 0xFF ;
+    if ( libusb_control_transfer( _dev, VRT_VENDOR_OUT, VRQ_MULTI_WRITE,
+       index, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
+       return false ;
+    }
+    return true ;
 }
 
-bool QS1R_putbit( libusb_device_handle * dev, int index, int bit, int value) {
-	uint32_t reg ;
-	if ( QS1R_read_multibus( dev, index, &reg ) {
-		if ( value == 0 ) {
-			clearB( reg, bit ) ;
-		} else {
-			setB( reg, bit ) ;
-		}
-		return QS1R_write_multibus( dev, index, reg ) ;
-	}
-	return false ;
+bool SoapyQS1R::DDC_putbit( int index, int bit, int value) {
+    uint32_t reg ;
+    if ( read_multibus( index, &reg ) {
+        if ( value == 0 ) {
+            clearB( reg, bit ) ;
+        } else {
+            setB( reg, bit ) ;
+        }
+        return write_multibus( index, reg ) ;
+    }
+    return false ;
 }
 
-bool QS1R_getbit( libusb_device_handle * dev, int index, int bit, int * value) {
-	uint32_t reg ;
-	if ( QS1R_read_multibus( dev, index, &reg ) {
-		*value = getB( reg, bit ) ;
-		return true ;
-	}
-	return false ;
+bool SoapyQS1R::DDC_getbit( int index, int bit, int * value) const {
+    uint32_t reg ;
+    if ( read_multibus( index, &reg ) {
+        *value = getB( reg, bit ) ;
+        return true ;
+    }
+    return false ;
 }
+
+-----------------------
+/*
+ * rtl-sdr, turns your Realtek RTL2832 based DVB dongle into a SDR receiver
+ * Copyright (C) 2012-2014 by Steve Markgraf <steve@steve-m.de>
+ * Copyright (C) 2012 by Dimitri Stolnikov <horiz0n@gmx.net>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <errno.h>
+#include <signal.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#ifndef _WIN32
+#include <unistd.h>
+#define min(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#include <libusb.h>
+
+/*
+ * All libusb callback functions should be marked with the LIBUSB_CALL macro
+ * to ensure that they are compiled with the same calling convention as libusb.
+ *
+ * If the macro isn't available in older libusb versions, we simply define it.
+ */
+#ifndef LIBUSB_CALL
+#define LIBUSB_CALL
+#endif
+
+#define DEFAULT_BUF_NUMBER  15
+#define DEFAULT_BUF_LENGTH  (16 * 32 * 512)
+
+#define CTRL_IN     (LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_IN)
+#define CTRL_OUT    (LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT)
+#define CTRL_TIMEOUT    300
+#define BULK_TIMEOUT    0
+
+#define EEPROM_ADDR 0xa0
+
+enum usb_reg {
+    USB_SYSCTL      = 0x2000,
+    USB_CTRL        = 0x2010,
+    USB_STAT        = 0x2014,
+    USB_EPA_CFG     = 0x2144,
+    USB_EPA_CTL     = 0x2148,
+    USB_EPA_MAXPKT      = 0x2158,
+    USB_EPA_MAXPKT_2    = 0x215a,
+    USB_EPA_FIFO_CFG    = 0x2160,
+};
+
+int SoapyQS1R::qs1r_read_array(uint8_t block, uint16_t addr, uint8_t *array, uint8_t len)
+{
+    int r;
+    uint16_t index = (block << 8);
+
+    r = libusb_control_transfer(_dev, CTRL_IN, 0, addr, index, array, len, CTRL_TIMEOUT);
+#if 0
+    if (r < 0)
+        fprintf(stderr, "%s failed with %d\n", __FUNCTION__, r);
+#endif
+    return r;
+}
+
+int SoapyQS1R::qs1r_write_array(uint8_t block, uint16_t addr, uint8_t *array, uint8_t len)
+{
+    int r;
+    uint16_t index = (block << 8) | 0x10;
+
+    r = libusb_control_transfer(_dev, CTRL_OUT, 0, addr, index, array, len, CTRL_TIMEOUT);
+#if 0
+    if (r < 0)
+        fprintf(stderr, "%s failed with %d\n", __FUNCTION__, r);
+#endif
+    return r;
+}
+
+int SoapyQS1R::qs1r_write_reg(uint8_t block, uint16_t addr, uint16_t val, uint8_t len)
+{
+    int r;
+    unsigned char data[2];
+
+    uint16_t index = (block << 8) | 0x10;
+
+    if (len == 1)
+        data[0] = val & 0xff;
+    else
+        data[0] = val >> 8;
+
+    data[1] = val & 0xff;
+
+    r = libusb_control_transfer(_dev, CTRL_OUT, 0, addr, index, data, len, CTRL_TIMEOUT);
+
+    if (r < 0)
+        fprintf(stderr, "%s failed with %d\n", __FUNCTION__, r);
+
+    return r;
+}
+
+uint16_t SoapyQS1R::qs1r_demod_read_reg(uint8_t page, uint16_t addr, uint8_t len)
+{
+    int r;
+    unsigned char data[2];
+
+    uint16_t index = page;
+    uint16_t reg;
+    addr = (addr << 8) | 0x20;
+
+    r = libusb_control_transfer(_dev, CTRL_IN, 0, addr, index, data, len, CTRL_TIMEOUT);
+
+    if (r < 0)
+        fprintf(stderr, "%s failed with %d\n", __FUNCTION__, r);
+
+    reg = (data[1] << 8) | data[0];
+
+    return reg;
+}
+
+int SoapyQS1R::qs1r_demod_write_reg(uint8_t page, uint16_t addr, uint16_t val, uint8_t len)
+{
+    int r;
+    unsigned char data[2];
+    uint16_t index = 0x10 | page;
+    addr = (addr << 8) | 0x20;
+
+    if (len == 1)
+        data[0] = val & 0xff;
+    else
+        data[0] = val >> 8;
+
+    data[1] = val & 0xff;
+
+    r = libusb_control_transfer(_dev, CTRL_OUT, 0, addr, index, data, len, CTRL_TIMEOUT);
+
+    if (r < 0)
+        fprintf(stderr, "%s failed with %d\n", __FUNCTION__, r);
+
+    qs1r_demod_read_reg(0x0a, 0x01, 1);
+
+    return (r == len) ? 0 : -1;
+}
+
+/*
+int SoapyQS1R::qs1r_close(void)
+{
+    // block until all async operations have been completed (if any)
+    while (QS1R_INACTIVE != _async_status) {
+#ifdef _WIN32
+        Sleep(1);
+#else
+        usleep(1000);
+#endif
+    }
+
+}
+*/
+
+static void LIBUSB_CALL SoapyQS1R::_libusb_callback(struct libusb_transfer *xfer)
+{
+//    rtlsdr_dev_t *dev = (rtlsdr_dev_t *)xfer->user_data;
+
+    if (LIBUSB_TRANSFER_COMPLETED == xfer->status) {
+        if (_callback)
+            _callback(xfer->buffer, xfer->actual_length);
+
+        libusb_submit_transfer(xfer); /* resubmit transfer */
+        _xfer_errors = 0;
+    } else if (LIBUSB_TRANSFER_CANCELLED != xfer->status) {
+#ifndef _WIN32
+        if (LIBUSB_TRANSFER_ERROR == xfer->status)
+            _xfer_errors++;
+
+        if (_xfer_errors >= _xfer_buf_num ||
+            LIBUSB_TRANSFER_NO_DEVICE == xfer->status) {
+#endif
+            _dev_lost = true;
+            qs1r_cancel_async();
+            fprintf(stderr, "cb transfer status: %d, "
+                "canceling...\n", xfer->status);
+#ifndef _WIN32
+        }
+#endif
+    }
+}
+
+int SoapyQS1R::qs1r_wait_async(qs1r_read_async_cb_t cb)
+{
+    return qs1r_read_async(cb, 0, 0);
+}
+
+static int SoapyQS1R::_qs1r_alloc_async_buffers(void)
+{
+    unsigned int i;
+
+    if (!_dev)
+        return -1;
+
+    if (!_xfer) {
+        _xfer = malloc(_xfer_buf_num *
+                   sizeof(struct libusb_transfer *));
+
+        for(i = 0; i < _xfer_buf_num; ++i)
+            _xfer[i] = libusb_alloc_transfer(0);
+    }
+
+    if (_xfer_buf)
+        return -2;
+
+    _xfer_buf = malloc(_xfer_buf_num * sizeof(unsigned char *));
+    memset(_xfer_buf, 0, _xfer_buf_num * sizeof(unsigned char *));
+
+#if defined(ENABLE_ZEROCOPY) && defined (__linux__) && LIBUSB_API_VERSION >= 0x01000105
+    fprintf(stderr, "Allocating %d zero-copy buffers\n", _xfer_buf_num);
+
+    _use_zerocopy = true;
+    for (i = 0; i < _xfer_buf_num; ++i) {
+        _xfer_buf[i] = libusb_dev_mem_alloc(_dev, _xfer_buf_len);
+
+        if (_xfer_buf[i]) {
+            /* Check if Kernel usbfs mmap() bug is present: if the
+             * mapping is correct, the buffers point to memory that
+             * was memset to 0 by the Kernel, otherwise, they point
+             * to random memory. We check if the buffers are zeroed
+             * and otherwise fall back to buffers in userspace.
+             */
+            if (_xfer_buf[i][0] || memcmp(_xfer_buf[i],
+                              _xfer_buf[i] + 1,
+                              _xfer_buf_len - 1)) {
+                fprintf(stderr, "Detected Kernel usbfs mmap() "
+                        "bug, falling back to buffers "
+                        "in userspace\n");
+                _use_zerocopy = false;
+                break;
+            }
+        } else {
+            fprintf(stderr, "Failed to allocate zero-copy "
+                    "buffer for transfer %d\nFalling "
+                    "back to buffers in userspace\n", i);
+            _use_zerocopy = false;
+            break;
+        }
+    }
+
+    /* zero-copy buffer allocation failed (partially or completely)
+     * we need to free the buffers again if already allocated */
+    if (!_use_zerocopy) {
+        for (i = 0; i < _xfer_buf_num; ++i) {
+            if (_xfer_buf[i])
+                libusb_dev_mem_free(_dev,
+                            _xfer_buf[i],
+                            _xfer_buf_len);
+        }
+    }
+#endif
+
+    /* no zero-copy available, allocate buffers in userspace */
+    if (!_use_zerocopy) {
+        for (i = 0; i < _xfer_buf_num; ++i) {
+            _xfer_buf[i] = malloc(_xfer_buf_len);
+
+            if (!_xfer_buf[i])
+                return -ENOMEM;
+        }
+    }
+
+    return 0;
+}
+
+static int SoapyQS1R::_qs1r_free_async_buffers(void)
+{
+    unsigned int i;
+
+    if (!_dev)
+        return -1;
+
+    if (_xfer) {
+        for(i = 0; i < _xfer_buf_num; ++i) {
+            if (_xfer[i]) {
+                libusb_free_transfer(_xfer[i]);
+            }
+        }
+
+        free(_xfer);
+        _xfer = NULL;
+    }
+
+    if (_xfer_buf) {
+        for (i = 0; i < _xfer_buf_num; ++i) {
+            if (_xfer_buf[i]) {
+                if (_use_zerocopy) {
+#if defined (__linux__) && LIBUSB_API_VERSION >= 0x01000105
+                    libusb_dev_mem_free(_dev,
+                                _xfer_buf[i],
+                                _xfer_buf_len);
+#endif
+                } else {
+                    free(_xfer_buf[i]);
+                }
+            }
+        }
+
+        free(_xfer_buf);
+        _xfer_buf = NULL;
+    }
+
+    return 0;
+}
+
+int SoapyQS1R::qs1r_read_async(qs1r_read_async_cb_t cb, uint32_t buf_num, uint32_t buf_len)
+{
+    unsigned int i;
+    int r = 0;
+    struct timeval tv = { 1, 0 };
+    struct timeval zerotv = { 0, 0 };
+    enum qs1r_async_status next_status = QS1R_INACTIVE;
+
+    if (!_dev)
+        return -1;
+
+    if (QS1R_INACTIVE != _async_status)
+        return -2;
+
+    _async_status = QS1R_RUNNING;
+    _async_cancel = false;
+
+    _callback = cb;
+
+    if (buf_num > 0)
+        _xfer_buf_num = buf_num;
+    else
+        _xfer_buf_num = DEFAULT_BUF_NUMBER;
+
+    if (buf_len > 0 && buf_len % 512 == 0) /* len must be multiple of 512 */
+        _xfer_buf_len = buf_len;
+    else
+        _xfer_buf_len = DEFAULT_BUF_LENGTH;
+
+    _qs1r_alloc_async_buffers(void);
+
+    for(i = 0; i < _xfer_buf_num; ++i) {
+        libusb_fill_bulk_transfer(_xfer[i],
+                      _dev,
+                      0x81,
+                      _xfer_buf[i],
+                      _xfer_buf_len,
+                      _libusb_callback,
+                      (void *)_dev,
+                      BULK_TIMEOUT);
+
+        r = libusb_submit_transfer(_xfer[i]);
+        if (r < 0) {
+            fprintf(stderr, "Failed to submit transfer %i\n"
+                    "Please increase your allowed " 
+                    "usbfs buffer size with the "
+                    "following command:\n"
+                    "echo 0 > /sys/module/usbcore"
+                    "/parameters/usbfs_memory_mb\n", i);
+            _async_status = QS1R_CANCELING;
+            break;
+        }
+    }
+
+    while (QS1R_INACTIVE != _async_status) {
+        r = libusb_handle_events_timeout_completed(SoapyQS1RSession::qs1r_context, &tv,
+                               &_async_cancel);
+        if (r < 0) {
+            /*fprintf(stderr, "handle_events returned: %d\n", r);*/
+            if (r == LIBUSB_ERROR_INTERRUPTED) /* stray signal */
+                continue;
+            break;
+        }
+
+        if (QS1R_CANCELING == _async_status) {
+            next_status = QS1R_INACTIVE;
+
+            if (!_xfer)
+                break;
+
+            for(i = 0; i < _xfer_buf_num; ++i) {
+                if (!_xfer[i])
+                    continue;
+
+                if (LIBUSB_TRANSFER_CANCELLED !=
+                        _xfer[i]->status) {
+                    r = libusb_cancel_transfer(_xfer[i]);
+                    /* handle events after canceling
+                     * to allow transfer status to
+                     * propagate */
+#ifdef _WIN32
+                    Sleep(1);
+#endif
+                    libusb_handle_events_timeout_completed(SoapyQS1RSession::qs1r_context,
+                                           &zerotv, NULL);
+                    if (r < 0)
+                        continue;
+
+                    next_status = QS1R_CANCELING;
+                }
+            }
+
+            if (_dev_lost || QS1R_INACTIVE == next_status) {
+                /* handle any events that still need to
+                 * be handled before exiting after we
+                 * just cancelled all transfers */
+                libusb_handle_events_timeout_completed(SoapyQS1RSession::qs1r_context,
+                                       &zerotv, NULL);
+                break;
+            }
+        }
+    }
+
+    _qs1r_free_async_buffers();
+
+    _async_status = next_status;
+
+    return r;
+}
+
+int SoapyQS1R::qs1r_cancel_async(void)
+{
+    if (!_dev)
+        return -1;
+
+    /* if streaming, try to cancel gracefully */
+    if (QS1R_RUNNING == _async_status) {
+        _async_status = QS1R_CANCELING;
+        _async_cancel = true;
+        return 0;
+    }
+
+    /* if called while in pending state, change the state forcefully */
+#if 0
+    if (QS1R_INACTIVE != _async_status) {
+        _async_status = QS1R_INACTIVE;
+        return 0;
+    }
+#endif
+    return -2;
+}
+

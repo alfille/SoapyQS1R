@@ -26,7 +26,6 @@
 
 static std::mutex sessionMutex;
 static size_t sessionCount = 0;
-static libusb_context * qs1r_context = NULL;
 
 SoapyQS1RSession::SoapyQS1RSession(void)
 {
@@ -37,7 +36,7 @@ SoapyQS1RSession::SoapyQS1RSession(void)
         // libusb
         int usb_ret = libusb_init(&qs1r_context);
         if ( usb_ret != 0 ) {
-            SoapySDR::logf(SOAPY_SDR_ERROR, "qs1r_init() failed -- %s", libusb_strerr(usb_ret));
+            SoapySDR::logf(SOAPY_SDR_ERROR, "qs1r_init() failed -- %s", libusb_strerror(usb_ret));
         }
     }
     sessionCount++;
