@@ -21,9 +21,6 @@
 
 #include "SoapyQS1R.hpp"
 
-//static std::map<std::string, SoapySDR::Kwargs> _cachedResults;
-
-
 static std::vector<SoapySDR::Kwargs> findQS1R(const SoapySDR::Kwargs &args)
 {
     SoapyQS1RSession Sess;

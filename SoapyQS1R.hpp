@@ -184,6 +184,8 @@ public:
     ~SoapyQS1RSession(void);
 
     static libusb_context * qs1r_context ;
+    static size_t sessionCount ;
+    static std::mutex sessionMutex;
 };
 
 class SoapyQS1R : public SoapySDR::Device
@@ -261,23 +263,6 @@ public:
             long long &timeNs,
             const long timeoutUs = 100000 );
 
-
-    int writeStream(
-            SoapySDR::Stream *stream,
-            const void * const *buffs,
-            const size_t numElems,
-            int &flags,
-            const long long timeNs = 0,
-            const long timeoutUs = 100000);
-
-    int readStreamStatus(
-            SoapySDR::Stream *stream,
-            size_t &chanMask,
-            int &flags,
-            long long &timeNs,
-            const long timeoutUs);
-
-
     int acquireReadBuffer(
             SoapySDR::Stream *stream,
             size_t &handle,
@@ -289,19 +274,6 @@ public:
     void releaseReadBuffer(
             SoapySDR::Stream *stream,
             const size_t handle);
-
-    int acquireWriteBuffer(
-            SoapySDR::Stream *stream,
-            size_t &handle,
-            void **buffs,
-            const long timeoutUs = 100000);
-
-    void releaseWriteBuffer(
-            SoapySDR::Stream *stream,
-            const size_t handle,
-            const size_t numElems,
-            int &flags,
-            const long long timeNs = 0);
 
     size_t getNumDirectAccessBuffers(SoapySDR::Stream *stream);
 
@@ -507,7 +479,7 @@ private:
     bool FPGA_control( int state ) ;
     bool FPGA_packet( FILE * rbf ) ;
     bool configure_device( void ) ;
-    bool read_multibus( int addr, uint32_t * value) ;
+    bool read_multibus( int addr, uint32_t * value) const ;
     bool write_multibus( int addr, uint32_t value) ;
     bool DDC_putbit( int index, int bit, int value) ;
     bool DDC_getbit( int index, int bit, int * value) const ;
@@ -515,8 +487,8 @@ private:
     typedef void(*qs1r_read_async_cb_t)(unsigned char *buf, uint32_t len, void *ctx);
     int qs1r_cancel_async(void);
     int qs1r_read_async(qs1r_read_async_cb_t cb, uint32_t buf_num, uint32_t buf_len) ;
-    static int _qs1r_free_async_buffers(void);
-    static int _qs1r_alloc_async_buffers(void);
+    int _qs1r_free_async_buffers(void);
+    int _qs1r_alloc_async_buffers(void);
     int qs1r_wait_async(qs1r_read_async_cb_t cb);
     static void LIBUSB_CALL _libusb_callback(struct libusb_transfer *xfer);
     //int qs1r_close(void);
@@ -526,7 +498,7 @@ private:
     int qs1r_write_array(uint8_t block, uint16_t addr, uint8_t *array, uint8_t len);
     int qs1r_read_array(uint8_t block, uint16_t addr, uint8_t *array, uint8_t len);
     bool _use_zerocopy ;
-    bool _async_cancel ;
+    int _async_cancel ; // should be bool, but libusb_handle_events_timeout_completed function wants an int
     enum qs1r_async_status {
         QS1R_INACTIVE = 0,
         QS1R_CANCELING,
@@ -537,8 +509,8 @@ private:
     uint32_t _xfer_errors;
     uint32_t _xfer_buf_num;
     uint32_t _xfer_buf_len;
-    unsigned char **_xfer_buf;
-    struct libusb_transfer **_xfer;
+    std::vector<unsigned char *> _xfer_buf;
+    std::vector<struct libusb_transfer *> _xfer;
     qs1r_read_async_cb_t _callback;
     size_t numBuffers;
     size_t bufferLength;

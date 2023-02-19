@@ -528,7 +528,7 @@ int rtlsdr_cancel_async(rtlsdr_dev_t *dev)
     /* if streaming, try to cancel gracefully */
     if (QS1R_RUNNING == dev->async_status) {
         dev->async_status = QS1R_CANCELING;
-        _async_cancel = true;
+        _async_cancel = 1;
         return 0;
     }
 

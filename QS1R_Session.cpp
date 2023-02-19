@@ -24,8 +24,9 @@
 #include <mutex>
 #include <cstddef>
 
-static std::mutex sessionMutex;
-static size_t sessionCount = 0;
+std::mutex SoapyQS1RSession::sessionMutex;
+size_t SoapyQS1RSession::sessionCount = 0;
+libusb_context * SoapyQS1RSession::qs1r_context = NULL ;
 
 SoapyQS1RSession::SoapyQS1RSession(void)
 {
