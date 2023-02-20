@@ -83,6 +83,7 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
 
     _sample_rate(50e3),
     _bandwidth(40e3),
+    _samples_per_read(4096),
 
     _RX_FREQ(0.0),
     _freq_corr(0.0),
@@ -408,41 +409,49 @@ void SoapyQS1R::setSampleRate( const int direction, const size_t channel, const 
             if ( write_multibus( DDC_SAMPLE_RATE_REG,   25000 ) ) {
                 _sample_rate = 25e3;
                 _bandwidth = 40e3 ;
+                _samples_per_read = 4096 ;
             }
         } else if ( rate <= 50e3 ) {
             if ( write_multibus( DDC_SAMPLE_RATE_REG,   50000 ) ) {
                 _sample_rate = 50e3 ;
                 _bandwidth = 40e3 ;
+                _samples_per_read = 4096 ;
             }
         } else if ( rate <= 125e3 ) {
             if ( write_multibus( DDC_SAMPLE_RATE_REG,  125000 ) ) {
                 _sample_rate = 125e3 ;
                 _bandwidth = 100e3 ;
+                _samples_per_read = 8192 ;
             }
         } else if ( rate <= 250e3 ) {
             if ( write_multibus( DDC_SAMPLE_RATE_REG,  250000 ) ) {
                 _sample_rate = 250e3 ;
                 _bandwidth = 200e3 ;
+                _samples_per_read = 8192 ;
             }
         } else if ( rate <= 625e3 ) {
             if ( write_multibus( DDC_SAMPLE_RATE_REG,  625000 ) ) {
                 _sample_rate = 625e3 ;
                 _bandwidth = 500e3 ;
+                _samples_per_read = 16384 ;
             }
         } else if ( rate <= 1250e3 ) {
             if ( write_multibus( DDC_SAMPLE_RATE_REG, 1250000 ) ) {
                 _sample_rate = 1250e3 ;
                 _bandwidth = 1000e3 ;
+                _samples_per_read = 16384 ;
             }
         } else if ( rate <= 1562.5e3 ) {
             if ( write_multibus( DDC_SAMPLE_RATE_REG, 1562500 ) ) {
                 _sample_rate = 1562.5e3 ;
                 _bandwidth = 1200e3 ;
+                _samples_per_read = 16384 ;
             }
         } else {
             if ( write_multibus( DDC_SAMPLE_RATE_REG, 2500000 ) ) {
                 _sample_rate = 2500e3 ;
                 _bandwidth = 2000e3 ;
+                _samples_per_read = 16384 ;
             }
         }
     }

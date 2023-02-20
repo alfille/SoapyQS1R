@@ -32,7 +32,7 @@
 
 #define DEFAULT_BUFFER_LENGTH (16 * 32 * 512)
 #define DEFAULT_NUM_BUFFERS 15
-#define BYTES_PER_SAMPLE 2
+#define BYTES_PER_SAMPLE (2*sizeof(uint32_t))
 
 std::vector<std::string> SoapyQS1R::getStreamFormats(const int direction, const size_t channel) const {
     std::vector<std::string> formats;

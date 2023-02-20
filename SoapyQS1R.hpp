@@ -32,13 +32,6 @@
 #include <math.h>
 #include <thread>
 
-//#define BUF_LEN         262144
-//#define BUF_NUM         15
-//#define BYTES_PER_SAMPLE    4
-//#define QS1R_RX_VGA_MAX_DB 62
-//#define QS1R_RX_LNA_MAX_DB 40
-//#define QS1R_AMP_MAX_DB 14
-
 // Bit macros
 // 32 bit for QS1R registers
 #define long1 ( (uint32_t) 1 )
@@ -52,12 +45,6 @@ enum QS1R_Format {
     QS1R_FORMAT_INT8    =2,
     QS1R_FORMAT_FLOAT64 =3,
 };
-
-typedef enum {
-    HACKRF_TRANSCEIVER_MODE_OFF = 0,
-    HACKRF_TRANSCEIVER_MODE_RX = 1,
-    HACKRF_TRANSCEIVER_MODE_TX = 2,
-} HackRF_transceiver_mode_t;
 
 #define DDC_VERSION_REG 0x00
 
@@ -371,87 +358,16 @@ private:
 
     double _sample_rate ;
     double _bandwidth ;
+    int _samples_per_read ;
 
     libusb_device_handle * _dev ;
 
-#if 0
-    struct libusb_transfer * _transfer ; 
- 
-    SoapySDR::Stream* const TX_STREAM = (SoapySDR::Stream*) 0x1;
-    SoapySDR::Stream* const RX_STREAM = (SoapySDR::Stream*) 0x2;
-
-    struct Stream {
-        Stream(): opened(false), buf_num(BUF_NUM), buf_len(BUF_LEN), buf(nullptr),
-                  buf_head(0), buf_tail(0), buf_count(0),
-                  remainderHandle(-1), remainderSamps(0), remainderOffset(0), remainderBuff(nullptr),
-                  format(QS1R_FORMAT_INT8) {}
-
-
-
-        bool opened;
-        uint32_t    buf_num;
-        uint32_t    buf_len;
-        int8_t      **buf;
-        uint32_t    buf_head;
-        uint32_t    buf_tail;
-        uint32_t    buf_count;
-
-        int32_t remainderHandle;
-        size_t remainderSamps;
-        size_t remainderOffset;
-        int8_t* remainderBuff;
-        uint32_t format;
-
-        ~Stream() { clear_buffers(); }
-        void clear_buffers();
-        void allocate_buffers();
-    };
-
-    struct RXStream: Stream {
-        uint32_t vga_gain;
-        uint32_t lna_gain;
-        uint8_t amp_gain;
-        double samplerate;
-        uint32_t bandwidth;
-        uint64_t frequency;
-
-        bool overflow;
-    };
-
-    struct TXStream: Stream {
-        uint32_t vga_gain;
-        uint8_t amp_gain;
-        double samplerate;
-        uint32_t bandwidth;
-        uint64_t frequency;
-        bool bias;
-
-        bool underflow;
-
-        bool burst_end;
-        int32_t burst_samps;
-    } ;
-
-    RXStream _rx_stream;
-    TXStream _tx_stream;
-
-    bool _auto_bandwidth;
-
-#endif
 
     std::string _serial;
 
     double _RX_FREQ;
     double _freq_corr; // frequency correction
     std::string _antenna ;
-
-
-    
-    double _current_samplerate;
-
-    uint32_t _current_bandwidth;
-
-    uint8_t _current_amp;
 
     /// Mutex protecting all use of the hackrf device _dev and other instance variables.
     /// Most of the hackrf API is thread-safe because it only calls libusb, however
@@ -460,8 +376,6 @@ private:
     mutable std::mutex  _device_mutex;
     std::mutex  _buf_mutex;
     std::condition_variable _buf_cond;
-
-    HackRF_transceiver_mode_t _current_mode;
 
     SoapyQS1RSession _sess;
 
