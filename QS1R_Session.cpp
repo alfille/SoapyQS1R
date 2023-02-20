@@ -37,7 +37,7 @@ SoapyQS1RSession::SoapyQS1RSession(void)
         // libusb
         int usb_ret = libusb_init(&qs1r_context);
         if ( usb_ret != 0 ) {
-            SoapySDR::logf(SOAPY_SDR_ERROR, "qs1r_init() failed -- %s", libusb_strerror(usb_ret));
+            SoapySDR::logf(SOAPY_SDR_ERROR, "qs1r_init() failed -- %s", libusb_error_name(usb_ret));
         }
     }
     sessionCount++;

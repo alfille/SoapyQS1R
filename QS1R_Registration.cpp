@@ -39,7 +39,7 @@ static std::vector<SoapySDR::Kwargs> findQS1R(const SoapySDR::Kwargs &args)
         if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
             libusb_device_handle * dev ;
             if ( libusb_open( devlist[i], &dev ) == 0 ) {
-
+                fprintf(stderr,"Found device\n");
                 // Set description fields
                 SoapySDR::Kwargs devInfo;
 
@@ -56,12 +56,12 @@ static std::vector<SoapySDR::Kwargs> findQS1R(const SoapySDR::Kwargs &args)
                 devInfo["manufacturer"] = (char *) amanf;
 
                 char aindex[256] ;
-                sprintf( aindex, "%d", index ) ;
+                snprintf( aindex, 255, "%d", index ) ;
                 devInfo["index"] = (char *) aindex;
                 ++index ;
 
                 char alabel[256] ;
-                sprintf( alabel, "QS1R %s on <%d:%d>", aserial, libusb_get_bus_number(devlist[i]), libusb_get_port_number(devlist[i]) );
+                snprintf( alabel, 255, "QS1R %s on <%d:%d>", aserial, libusb_get_bus_number(devlist[i]), libusb_get_port_number(devlist[i]) );
                 devInfo["label"] = alabel ;
 
                 libusb_close( dev ) ;

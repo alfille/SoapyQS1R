@@ -24,19 +24,26 @@
 
 // All routines are true if successful, else false on error
 
+/*
 bool SoapyQS1R::configure_device( void ) {
-    return (libusb_set_configuration( _dev, 1 )==0)
-        && (libusb_claim_interface( _dev, 0 )==0)
-        && (libusb_set_interface_alt_setting( _dev, 0, 0 )==0)
-        && (libusb_clear_halt( _dev, QS1R_EP2 & 0x0F )==0)
-        && (libusb_clear_halt( _dev, QS1R_EP4 & 0x0F )==0)
-        && (libusb_clear_halt( _dev, QS1R_EP6 & 0x0F )==0)
-        && (libusb_clear_halt( _dev, QS1R_EP8 & 0x0F )==0) ;
+    return (libusb_set_configuration( _dev, 1 )==0)         &&(printf("config\n")>0)
+        && (libusb_claim_interface( _dev, 0 )==0)           &&(printf("claim\n")>0)
+        && (libusb_set_interface_alt_setting( _dev, 0, 0 )==0)&&(printf("alt\n")>0)
+        && (libusb_clear_halt( _dev, QS1R_EP2 & 0x0F )==0)  &&(printf("EP2\n")>0)
+        && (libusb_clear_halt( _dev, QS1R_EP4 & 0x0F )==0)  &&(printf("EP4\n")>0)
+        && (libusb_clear_halt( _dev, QS1R_EP6 & 0x0F )==0)  &&(printf("EP6\n")>0)
+        && (libusb_clear_halt( _dev, QS1R_EP8 & 0x0F )==0)  &&(printf("EP8\n")>0) ;
 }
+*/
+bool SoapyQS1R::configure_device( void ) {
+    return (libusb_set_configuration( _dev, 1 )==0)         &&(printf("config\n")>0)
+        && (libusb_claim_interface( _dev, 0 )==0)           &&(printf("claim\n")>0)
+        && (libusb_set_interface_alt_setting( _dev, 0, 0 )==0)&&(printf("alt\n")>0) ;
+    }
 
 bool SoapyQS1R::load_device( void ) {
-    return (firmware_write( "firmware/qs1r_firmware_03032011.hex" )
-        && FPGA_write( "firmware/QS1R_WINRAD_04112011.rbf" ) );
+    return firmware_write( "/usr/share/firmware/qs1r_firmware_03032011.hex" ) && (printf("hex file\n")>0)
+        && FPGA_write( "/usr/share/firmware/QS1R_WINRAD_04112011.rbf" )  &&(printf("FPGSA file\n")>0) ;
 }
 
 bool SoapyQS1R::ram_write( int ram_address, unsigned char * buffer, int length ) {
@@ -85,6 +92,7 @@ bool SoapyQS1R::firmware_write( const char * filename ) {
         while ( !feof(firm) ) {
             char line[1024] ;
             fgets( line, 1024, firm ) ;
+            //printf("%s\n",line);
             if ( ! firmware_line( line ) ) {
                 ret = false ;
                 break ;
@@ -100,11 +108,12 @@ bool SoapyQS1R::firmware_write( const char * filename ) {
 
 bool SoapyQS1R::firmware_line( char * line ) {
     char c;
-    int flength ;
-    int faddr ;
-    int ftype ;
+    unsigned int flength ;
+    unsigned int faddr ;
+    unsigned int ftype ;
 
     sscanf( line, "%c%02x%04x%02x", &c, &flength, &faddr, &ftype ) ;
+    //printf("%c %d %d %d\n",c,flength,faddr, ftype);
     if ( c != ':' ) {
         return false ; // no initial ':'
     }
@@ -127,12 +136,15 @@ bool SoapyQS1R::firmware_line_type0( char * line, int flength, int faddr ) {
     // note: line has header removed (9 chars)
     unsigned char data[256] ;
     unsigned char running_sum = flength + (faddr & 0xff) + (faddr>>8) + 0 ; // first 4 bytes (header)
+    
+    //printf("Now line <%s>\n");
 
     for ( int i = 0 ; i <= flength ; ++i ) { // 1 extra for checksum
         unsigned int b ;
-        sscanf( "%02x", line+2*i, &b ) ;
+        sscanf( line+2*i, "%02x", &b ) ;
         data[i] = b ;
         running_sum += data[i] ;
+        //printf("Char %02x Int %d Running %02x\n",b,(int)data[i],running_sum);
     }
 
     if ( running_sum != 0x00 ) {
@@ -145,14 +157,15 @@ bool SoapyQS1R::firmware_line_type0( char * line, int flength, int faddr ) {
 
 bool SoapyQS1R::FPGA_write( const char * filename ) {
     FILE * rbf = fopen( filename, "rb" ) ;
+    printf("FPGA\n");
     if ( rbf == NULL ) {
         SoapySDR::logf(SOAPY_SDR_ERROR, "Cannot open FPGA file -- %s", filename);
         return false ;
     }
+    printf("opened file\n");
+    bool ret = FPGA_control( FL_BEGIN ) && (printf("BEGIN\n")>0) && FPGA_packet( rbf ) && (printf("PACKET\n")>0) ;
 
-    bool ret = FPGA_control( FL_BEGIN ) && FPGA_packet( rbf ) ;
-
-    ret = FPGA_control( FL_END ) && ret ; // run anyways
+    ret = FPGA_control( FL_END ) && (printf("END\n")>0) && ret ; // run anyways
 
     fclose( rbf ) ;
     return ret ;
@@ -162,6 +175,7 @@ bool SoapyQS1R::FPGA_packet( FILE * rbf ) {
     unsigned char buffer[ MAX_EP4_PACKET_SIZE ];
     size_t length ;
     while ( (length = fread( buffer, 1, sizeof(buffer), rbf )) > 0 ) {
+        printf("Read %lu\n",length);
         if ( ! bulk_write_EP( QS1R_EP2, buffer, length ) ) {
             // Error writing FPGA
             fprintf( stderr, "FPGA error writing line %s\n", buffer ) ;
@@ -172,9 +186,13 @@ bool SoapyQS1R::FPGA_packet( FILE * rbf ) {
 }
 
 bool SoapyQS1R::FPGA_control( int state ) {
-    return libusb_control_transfer( _dev, VRT_VENDOR_OUT,
-        VRQ_FPGA_LOAD, 0, state, 0, 0,
-        USB_TIMEOUT_CONTROL ) == 0 ;
+    unsigned char dummy[1] ;
+    printf("Try Control\n");
+    int ret = libusb_control_transfer( _dev, VRT_VENDOR_OUT,
+        VRQ_FPGA_LOAD, 0, state, dummy, 0,
+        USB_TIMEOUT_CONTROL );
+    printf("Control %d\n",ret) ;
+    return true ;
 }
 
 bool SoapyQS1R::bulk_write_EP( int ep, unsigned char * buffer, int length )

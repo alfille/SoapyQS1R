@@ -101,8 +101,8 @@ typedef enum {
 #define FX2_WRITE_RAM_REQ       0xA0 
 
 /* Vendor Request Types */
-#define VRT_VENDOR_IN           LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_IN
-#define VRT_VENDOR_OUT          LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_OUT
+#define VRT_VENDOR_IN           0xC0 //LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_IN
+#define VRT_VENDOR_OUT          0x40 // LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE | LIBUSB_ENDPOINT_OUT
 
 /* Vendor In Commands */
 #define VRQ_I2C_READ            0x81    // wValueL: i2c address; length: how much to read
@@ -120,9 +120,9 @@ typedef enum {
 
 /* Vendor Out Commands */
 #define VRQ_FPGA_LOAD           0x02
-#define FL_BEGIN                0
+#define FL_BEGIN                0x00
 #define FL_XFER                 1
-#define FL_END                  2
+#define FL_END                  0x02
 
 #define VRQ_FPGA_SET_RESET      0x04    // wValueL: {0,1}
 #define VRQ_MULTI_WRITE         0x05
@@ -430,7 +430,7 @@ private:
     size_t bufferLength;
     size_t _asyncBuffs;
     std::atomic<long long> _ticks;
-    std::atomic<size_t>	_buf_count;
+    std::atomic<size_t> _buf_count;
     std::atomic<bool> _overflowEvent;
     struct Buffer
     {
@@ -438,8 +438,8 @@ private:
         std::vector<signed char> data;
     };
     std::vector<Buffer> _buffs;
-    size_t	_buf_head;
-    size_t	_buf_tail;
+    size_t  _buf_head;
+    size_t  _buf_tail;
     signed char *_currentBuff;
     size_t _currentHandle;
     std::atomic<bool> _resetBuffer;

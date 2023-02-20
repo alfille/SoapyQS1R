@@ -47,14 +47,19 @@ endif(APPLE)
 SOAPY_SDR_MODULE_UTIL(
     TARGET QS1RSupport
     SOURCES
-	QS1R_Registration.cpp
-	QS1R_Settings.cpp
-	QS1R_Streaming.cpp
-	QS1R_Streaming2.cpp
-	QS1R_Session.cpp
+    QS1R_Registration.cpp
+    QS1R_Settings.cpp
+    QS1R_Streaming.cpp
+    QS1R_Streaming2.cpp
+    QS1R_Session.cpp
     QS1R_Utilities.cpp
     LIBRARIES ${LIBUSB_LIBRARIES}
 )
+
+#Copy firmware to /usr/share
+# https://stackoverflow.com/questions/15694347/installing-additional-files-with-cmake
+INSTALL(DIRECTORY firmware DESTINATION /usr/share)
+
 
 ########################################################################
 # uninstall target
