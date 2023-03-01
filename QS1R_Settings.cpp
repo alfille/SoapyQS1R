@@ -202,7 +202,7 @@ size_t SoapyQS1R::getNumChannels( const int dir ) const
 
 bool SoapyQS1R::getFullDuplex( const int direction, const size_t channel ) const
 {
-        return(false);
+        return(true);
 }
 
 /*******************************************************************
@@ -315,10 +315,14 @@ std::string SoapyQS1R::readSetting(const std::string &key) const
 
 std::vector<std::string> SoapyQS1R::listAntennas( const int direction, const size_t channel ) const
 {
-    std::vector<std::string> options;
-    options.push_back( "RX BNC LPF" );
-    options.push_back( "RX SMA" );
-    return(options);
+    if (direction == SOAPY_SDR_RX) {
+        std::vector<std::string> options;
+        options.push_back( "RX BNC LPF" );
+        options.push_back( "RX SMA" );
+        return(options);
+    } else {
+        return SoapySDR::Device::listAntennas( direction,channel) ;
+    }
 }
 
 
@@ -327,14 +331,18 @@ void SoapyQS1R::setAntenna( const int direction, const size_t channel, const std
     if (direction == SOAPY_SDR_RX) {
         _antenna = name ;
     } else {
-        throw std::runtime_error("setAntenna failed: QS1R only supports RX");
+        SoapySDR::Device::setAntenna( direction, channel, name ) ;
     }
 }
 
 
 std::string SoapyQS1R::getAntenna( const int direction, const size_t channel ) const
 {
-    return(_antenna);
+    if (direction == SOAPY_SDR_RX) {
+        return _antenna ;
+    } else {
+        return SoapySDR::Device::getAntenna( direction, channel ) ;
+    }
 }
 
 

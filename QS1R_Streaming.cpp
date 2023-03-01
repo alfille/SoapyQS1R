@@ -35,13 +35,17 @@
 #define BYTES_PER_SAMPLE (2*sizeof(uint32_t))
 
 std::vector<std::string> SoapyQS1R::getStreamFormats(const int direction, const size_t channel) const {
-    std::vector<std::string> formats;
+    if (direction == SOAPY_SDR_RX) {
+        std::vector<std::string> formats;
 
-    formats.push_back(SOAPY_SDR_CS8);
-    formats.push_back(SOAPY_SDR_CS16);
-    formats.push_back(SOAPY_SDR_CF32);
+        formats.push_back(SOAPY_SDR_CS8);
+        formats.push_back(SOAPY_SDR_CS16);
+        formats.push_back(SOAPY_SDR_CF32);
 
-    return formats;
+        return formats;
+    } else {
+        return SoapySDR::Device::getStreamFormats( direction, channel) ;
+    }
 }
 
 std::string SoapyQS1R::getNativeStreamFormat(const int direction, const size_t channel, double &fullScale) const {
@@ -49,10 +53,9 @@ std::string SoapyQS1R::getNativeStreamFormat(const int direction, const size_t c
      if (direction == SOAPY_SDR_RX) {
         fullScale = 1<<31;
         return SOAPY_SDR_CS32;
-     }
-
-     fullScale = 1<<31;
-     return SOAPY_SDR_CS32;
+     } else {
+         return SoapySDR::Device::getNativeStreamFormat( direction, channel, fullScale ) ;
+    }
 }
 
 double SoapyQS1R::getReferenceClockRate( void ) const {
@@ -61,43 +64,43 @@ double SoapyQS1R::getReferenceClockRate( void ) const {
 
 SoapySDR::ArgInfoList SoapyQS1R::getStreamArgsInfo(const int direction, const size_t channel) const {
     //check that direction is SOAPY_SDR_RX
-//     if (direction != SOAPY_SDR_RX) {
-//         throw std::runtime_error("QS1R is RX only, use SOAPY_SDR_RX");
-//     }
+     if (direction == SOAPY_SDR_RX) {
+        SoapySDR::ArgInfoList streamArgs;
 
-    SoapySDR::ArgInfoList streamArgs;
+        SoapySDR::ArgInfo bufflenArg;
+        bufflenArg.key = "bufflen";
+        bufflenArg.value = std::to_string(DEFAULT_BUFFER_LENGTH);
+        bufflenArg.name = "Buffer Size";
+        bufflenArg.description = "Number of bytes per buffer, multiples of 512 only.";
+        bufflenArg.units = "bytes";
+        bufflenArg.type = SoapySDR::ArgInfo::INT;
 
-    SoapySDR::ArgInfo bufflenArg;
-    bufflenArg.key = "bufflen";
-    bufflenArg.value = std::to_string(DEFAULT_BUFFER_LENGTH);
-    bufflenArg.name = "Buffer Size";
-    bufflenArg.description = "Number of bytes per buffer, multiples of 512 only.";
-    bufflenArg.units = "bytes";
-    bufflenArg.type = SoapySDR::ArgInfo::INT;
+        streamArgs.push_back(bufflenArg);
 
-    streamArgs.push_back(bufflenArg);
+        SoapySDR::ArgInfo buffersArg;
+        buffersArg.key = "buffers";
+        buffersArg.value = std::to_string(DEFAULT_NUM_BUFFERS);
+        buffersArg.name = "Ring buffers";
+        buffersArg.description = "Number of buffers in the ring.";
+        buffersArg.units = "buffers";
+        buffersArg.type = SoapySDR::ArgInfo::INT;
 
-    SoapySDR::ArgInfo buffersArg;
-    buffersArg.key = "buffers";
-    buffersArg.value = std::to_string(DEFAULT_NUM_BUFFERS);
-    buffersArg.name = "Ring buffers";
-    buffersArg.description = "Number of buffers in the ring.";
-    buffersArg.units = "buffers";
-    buffersArg.type = SoapySDR::ArgInfo::INT;
+        streamArgs.push_back(buffersArg);
 
-    streamArgs.push_back(buffersArg);
+        SoapySDR::ArgInfo asyncbuffsArg;
+        asyncbuffsArg.key = "asyncBuffs";
+        asyncbuffsArg.value = "0";
+        asyncbuffsArg.name = "Async buffers";
+        asyncbuffsArg.description = "Number of async usb buffers (advanced).";
+        asyncbuffsArg.units = "buffers";
+        asyncbuffsArg.type = SoapySDR::ArgInfo::INT;
 
-    SoapySDR::ArgInfo asyncbuffsArg;
-    asyncbuffsArg.key = "asyncBuffs";
-    asyncbuffsArg.value = "0";
-    asyncbuffsArg.name = "Async buffers";
-    asyncbuffsArg.description = "Number of async usb buffers (advanced).";
-    asyncbuffsArg.units = "buffers";
-    asyncbuffsArg.type = SoapySDR::ArgInfo::INT;
+        streamArgs.push_back(asyncbuffsArg);
 
-    streamArgs.push_back(asyncbuffsArg);
-
-    return streamArgs;
+        return streamArgs;
+    } else {
+         return SoapySDR::Device::getStreamArgsInfo( direction, channel ) ;
+    }
 }
 
 /*******************************************************************
@@ -163,130 +166,130 @@ SoapySDR::Stream *SoapyQS1R::setupStream(
         const std::vector<size_t> &channels,
         const SoapySDR::Kwargs &args)
 {
-    if (direction != SOAPY_SDR_RX)
+    if (direction == SOAPY_SDR_RX)
     {
-        throw std::runtime_error("RTL-SDR is RX only, use SOAPY_SDR_RX");
-    }
-
-    //check the channel configuration
-    if (channels.size() > 1 or (channels.size() > 0 and channels.at(0) != 0))
-    {
-        throw std::runtime_error("setupStream invalid channel selection");
-    }
-
-    //check the format
-    if (format == SOAPY_SDR_CF32)
-    {
-        SoapySDR_log(SOAPY_SDR_INFO, "Using format CF32.");
-        _rxFormat = RX_FORMAT_FLOAT32;
-    }
-    else if (format == SOAPY_SDR_CS16)
-    {
-        SoapySDR_log(SOAPY_SDR_INFO, "Using format CS16.");
-        _rxFormat = RX_FORMAT_INT16;
-    }
-    else if (format == SOAPY_SDR_CS8) {
-        SoapySDR_log(SOAPY_SDR_INFO, "Using format CS8.");
-        _rxFormat = RX_FORMAT_INT8;
-    }
-    else
-    {
-        throw std::runtime_error(
-                "setupStream invalid format '" + format
-                        + "' -- Only CS8, CS16 and CF32 are supported by SoapyRTLSDR module.");
-    }
-
-    if (_rxFormat != RX_FORMAT_INT8 && !_lut_32f.size())
-    {
-        SoapySDR_logf(SOAPY_SDR_DEBUG, "Generating RTL-SDR lookup tables");
-        // create lookup tables
-        for (unsigned int i = 0; i <= 0xffff; i++)
+        //check the channel configuration
+        if (channels.size() > 1 or (channels.size() > 0 and channels.at(0) != 0))
         {
-# if (__BYTE_ORDER == __LITTLE_ENDIAN)
-            float re = ((i & 0xff) - 127.4f) * (1.0f / 128.0f);
-            float im = ((i >> 8) - 127.4f) * (1.0f / 128.0f);
-#else
-            float re = ((i >> 8) - 127.4f) * (1.0f / 128.0f);
-            float im = ((i & 0xff) - 127.4f) * (1.0f / 128.0f);
-#endif
-
-            std::complex<float> v32f, vs32f;
-
-            v32f.real(re);
-            v32f.imag(im);
-            _lut_32f.push_back(v32f);
-
-            vs32f.real(v32f.imag());
-            vs32f.imag(v32f.real());
-            _lut_swap_32f.push_back(vs32f);
-
-            std::complex<int16_t> v16i, vs16i;
-
-            v16i.real(int16_t((float(SHRT_MAX) * re)));
-            v16i.imag(int16_t((float(SHRT_MAX) * im)));
-            _lut_16i.push_back(v16i);
-
-            vs16i.real(vs16i.imag());
-            vs16i.imag(vs16i.real());
-            _lut_swap_16i.push_back(vs16i);
+            throw std::runtime_error("setupStream invalid channel selection");
         }
-    }
 
-    bufferLength = DEFAULT_BUFFER_LENGTH;
-    if (args.count("bufflen") != 0)
-    {
-        try
+        //check the format
+        if (format == SOAPY_SDR_CF32)
         {
-            int bufferLength_in = std::stoi(args.at("bufflen"));
-            if (bufferLength_in > 0)
+            SoapySDR_log(SOAPY_SDR_INFO, "Using format CF32.");
+            _rxFormat = RX_FORMAT_FLOAT32;
+        }
+        else if (format == SOAPY_SDR_CS16)
+        {
+            SoapySDR_log(SOAPY_SDR_INFO, "Using format CS16.");
+            _rxFormat = RX_FORMAT_INT16;
+        }
+        else if (format == SOAPY_SDR_CS8) {
+            SoapySDR_log(SOAPY_SDR_INFO, "Using format CS8.");
+            _rxFormat = RX_FORMAT_INT8;
+        }
+        else
+        {
+            throw std::runtime_error(
+                    "setupStream invalid format '" + format
+                            + "' -- Only CS8, CS16 and CF32 are supported by SoapyRTLSDR module.");
+        }
+
+        if (_rxFormat != RX_FORMAT_INT8 && !_lut_32f.size())
+        {
+            SoapySDR_logf(SOAPY_SDR_DEBUG, "Generating RTL-SDR lookup tables");
+            // create lookup tables
+            for (unsigned int i = 0; i <= 0xffff; i++)
             {
-                bufferLength = bufferLength_in;
+    # if (__BYTE_ORDER == __LITTLE_ENDIAN)
+                float re = ((i & 0xff) - 127.4f) * (1.0f / 128.0f);
+                float im = ((i >> 8) - 127.4f) * (1.0f / 128.0f);
+    #else
+                float re = ((i >> 8) - 127.4f) * (1.0f / 128.0f);
+                float im = ((i & 0xff) - 127.4f) * (1.0f / 128.0f);
+    #endif
+
+                std::complex<float> v32f, vs32f;
+
+                v32f.real(re);
+                v32f.imag(im);
+                _lut_32f.push_back(v32f);
+
+                vs32f.real(v32f.imag());
+                vs32f.imag(v32f.real());
+                _lut_swap_32f.push_back(vs32f);
+
+                std::complex<int16_t> v16i, vs16i;
+
+                v16i.real(int16_t((float(SHRT_MAX) * re)));
+                v16i.imag(int16_t((float(SHRT_MAX) * im)));
+                _lut_16i.push_back(v16i);
+
+                vs16i.real(vs16i.imag());
+                vs16i.imag(vs16i.real());
+                _lut_swap_16i.push_back(vs16i);
             }
         }
-        catch (const std::invalid_argument &){}
-    }
-    SoapySDR_logf(SOAPY_SDR_DEBUG, "RTL-SDR Using buffer length %d", bufferLength);
 
-    numBuffers = DEFAULT_NUM_BUFFERS;
-    if (args.count("buffers") != 0)
-    {
-        try
+        bufferLength = DEFAULT_BUFFER_LENGTH;
+        if (args.count("bufflen") != 0)
         {
-            int numBuffers_in = std::stoi(args.at("buffers"));
-            if (numBuffers_in > 0)
+            try
             {
-                numBuffers = numBuffers_in;
+                int bufferLength_in = std::stoi(args.at("bufflen"));
+                if (bufferLength_in > 0)
+                {
+                    bufferLength = bufferLength_in;
+                }
             }
+            catch (const std::invalid_argument &){}
         }
-        catch (const std::invalid_argument &){}
-    }
-    SoapySDR_logf(SOAPY_SDR_DEBUG, "RTL-SDR Using %d buffers", numBuffers);
+        SoapySDR_logf(SOAPY_SDR_DEBUG, "RTL-SDR Using buffer length %d", bufferLength);
 
-    _asyncBuffs = 0;
-    if (args.count("asyncBuffs") != 0)
-    {
-        try
+        numBuffers = DEFAULT_NUM_BUFFERS;
+        if (args.count("buffers") != 0)
         {
-            int asyncBuffs_in = std::stoi(args.at("asyncBuffs"));
-            if (asyncBuffs_in > 0)
+            try
             {
-                _asyncBuffs = asyncBuffs_in;
+                int numBuffers_in = std::stoi(args.at("buffers"));
+                if (numBuffers_in > 0)
+                {
+                    numBuffers = numBuffers_in;
+                }
             }
+            catch (const std::invalid_argument &){}
         }
-        catch (const std::invalid_argument &){}
+        SoapySDR_logf(SOAPY_SDR_DEBUG, "RTL-SDR Using %d buffers", numBuffers);
+
+        _asyncBuffs = 0;
+        if (args.count("asyncBuffs") != 0)
+        {
+            try
+            {
+                int asyncBuffs_in = std::stoi(args.at("asyncBuffs"));
+                if (asyncBuffs_in > 0)
+                {
+                    _asyncBuffs = asyncBuffs_in;
+                }
+            }
+            catch (const std::invalid_argument &){}
+        }
+
+        //clear async fifo counts
+        _buf_tail = 0;
+        _buf_count = 0;
+        _buf_head = 0;
+
+        //allocate buffers
+        _buffs.resize(numBuffers);
+        for (auto &buff : _buffs) buff.data.reserve(bufferLength);
+        for (auto &buff : _buffs) buff.data.resize(bufferLength);
+
+        return (SoapySDR::Stream *) this;
+    } else {
+        return SoapySDR::Device::setupStream( direction, format, channels,args );
     }
-
-    //clear async fifo counts
-    _buf_tail = 0;
-    _buf_count = 0;
-    _buf_head = 0;
-
-    //allocate buffers
-    _buffs.resize(numBuffers);
-    for (auto &buff : _buffs) buff.data.reserve(bufferLength);
-    for (auto &buff : _buffs) buff.data.resize(bufferLength);
-
-    return (SoapySDR::Stream *) this;
 }
 
 void SoapyQS1R::closeStream(SoapySDR::Stream *stream)
