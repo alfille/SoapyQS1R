@@ -57,7 +57,7 @@ SOAPY_SDR_MODULE_UTIL(
 
 #Copy firmware to /usr/share
 # https://stackoverflow.com/questions/15694347/installing-additional-files-with-cmake
-INSTALL(DIRECTORY firmware DESTINATION /usr/share)
+INSTALL(DIRECTORY firmware DESTINATION /usr/share/QS1R)
 
 
 ########################################################################

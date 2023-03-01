@@ -125,7 +125,7 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
         || firmware_read_sn( &sn ) 
         || sn!=3032011 ) 
     {
-        if ( ! firmware_write( "/usr/share/firmware/qs1r_firmware_11022011.hex" ) ) {
+        if ( ! firmware_write( "/usr/share/QS1R/firmware/qs1r_firmware_11022011.hex" ) ) {
             throw std::runtime_error("Cannot load QS1R firmware file");
         }
         libusb_close(_dev);
@@ -143,7 +143,7 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
     /* Check so see if FPGA loaded */
     uint32_t fw = 0 ;
     if ( args.count("force")!=0 || FPGA_read_sn( &fw ) || fw!=0x07192011 ) {
-        if (!FPGA_write( "/usr/share/firmware/QS1R_WINRAD_04112011.rbf")) {
+        if (!FPGA_write( "/usr/share/QS1R/firmware/QS1R_WINRAD_04112011.rbf")) {
             throw std::runtime_error("Cannot load FPGA firmware file");
         }
     }
