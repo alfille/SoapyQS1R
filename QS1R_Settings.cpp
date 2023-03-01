@@ -33,6 +33,7 @@ bool SoapyQS1R::qs1r_by_serial( const char * serial ) {
     libusb_device ** devlist ;
     ssize_t usb_count = libusb_get_device_list( SoapyQS1RSession::qs1r_context, &devlist ) ;
 
+    printf("Try opening by serial<%s> count=%lu\n",serial,usb_count);
     for ( auto i =0 ; i < usb_count ; ++i ) {
         struct libusb_device_descriptor desc ;
         libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
@@ -50,6 +51,7 @@ bool SoapyQS1R::qs1r_by_serial( const char * serial ) {
         }
     }
     libusb_free_device_list( devlist, 1 ) ;
+    printf("%sby serial\n",_dev==NULL?"Not ":"");
     return _dev != NULL ; ;
 }
 
@@ -62,12 +64,15 @@ bool SoapyQS1R::qs1r_by_index( const char * index ) {
     libusb_device ** devlist ;
     ssize_t usb_count = libusb_get_device_list( SoapyQS1RSession::qs1r_context, &devlist ) ;
 
+    printf("Try opening by index<%s=%d> count = %lu\n",index,target,usb_count);
     for ( auto i =0 ; i < usb_count ; ++i ) {
         struct libusb_device_descriptor desc ;
         libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
         if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
             if ( idx == target ) {
-                libusb_open( devlist[i], &_dev ) ;
+                int r = libusb_open( devlist[i], &_dev ) ;
+                printf("Open code =%d\n",r);
+                if (r) printf("libusb open %s\n",libusb_error_name(r) );
                 libusb_free_device_list( devlist, 1 ) ;
                 return true ;
             }
@@ -75,7 +80,22 @@ bool SoapyQS1R::qs1r_by_index( const char * index ) {
         }
     }
     libusb_free_device_list( devlist, 1 ) ;
+    printf("Not by index\n");
     return false ;
+}
+
+bool SoapyQS1R::openDevice( const SoapySDR::Kwargs &args ) 
+{
+
+    if (args.count("label") != 0)
+        SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
+
+    /* Open the QS1R by matching serial number or index */
+    if (args.count("serial") == 0)
+        throw std::runtime_error("no QS1r device matches");
+    _serial = args.at("serial");
+
+    return qs1r_by_serial(_serial.c_str()) || qs1r_by_index( args.at("index").c_str()) ;
 }
 
 SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
@@ -90,49 +110,44 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
     _antenna("RX BNC LPF"),
     _ticks(0)
 {
-
-    if (args.count("label") != 0)
-        SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
-
-    /* Open the QS1R by matching serial number or index */
-    if (args.count("serial") == 0)
-        throw std::runtime_error("no QS1r device matches");
-    _serial = args.at("serial");
-
-    if ( !qs1r_by_serial(_serial.c_str()) && !qs1r_by_index( args.at("index").c_str()) )
+    if ( !openDevice(args) )
     {
         throw std::runtime_error("no QS1r device matches");
     }
 
-    /* Check so see if firmware loaded */
     if ( ! configure_device( ) ) {
             throw std::runtime_error("Cannot set QS1R usb configuration");
     }
-
-    uint32_t sn = 0 ;
-    uint32_t fw = 0 ;
-    if ( ! get_firmware_sn( &sn )
-        || sn!=3032011
-        || ! read_multibus( DDC_VERSION_REG, &fw )
-        || fw != 0x7192011
-        ) {
-        if ( load_device()
-            && get_firmware_sn( &sn )
-            && read_multibus( DDC_VERSION_REG, &fw )
-            ) {
-                // Load into devInfo
-                // Set description fields
-                SoapySDR::Kwargs devInfo;
-                char buf[20] ;
-                snprintf( buf, 20, "%08d",sn) ;
-                devInfo["SerialNumber"]=buf;
-                snprintf( buf, 20, "%08x",fw) ;
-                devInfo["Firmware"]=buf;
-                printf( "Successful QS1R opening: SN %0d, FW %0X\n",sn,fw);
-        } else {
-            throw std::runtime_error("Cannot load QS1R firmware or code");
+    
+    /* Check so see if firmware loaded */
+    uint32_t sn = 0 ;    
+    if ( args.count("force")!=0 
+        || firmware_read_sn( &sn ) 
+        || sn!=3032011 ) 
+    {
+        if ( ! firmware_write( "/usr/share/firmware/qs1r_firmware_11022011.hex" ) ) {
+            throw std::runtime_error("Cannot load QS1R firmware file");
+        }
+        libusb_close(_dev);
+        
+        // Need to reopen!!!
+        // pause for close to succeed
+        struct timespec reset_time = { 4, 0 } ;
+        nanosleep( &reset_time, NULL ) ;
+        if ( !openDevice(args) || !configure_device() ) {
+            throw std::runtime_error("Cannot reopen QS1R after firmware file");
         }
     }
+    firmware_read_sn( &sn ) && printf("Firmware %08d\n",sn) ;            
+
+    /* Check so see if FPGA loaded */
+    uint32_t fw = 0 ;
+    if ( args.count("force")!=0 || FPGA_read_sn( &fw ) || fw!=0x07192011 ) {
+        if (!FPGA_write( "/usr/share/firmware/QS1R_WINRAD_04112011.rbf")) {
+            throw std::runtime_error("Cannot load FPGA firmware file");
+        }
+    }
+    FPGA_read_sn( &fw ) && printf("FPGA %08X\n",fw) ;            
 }
 
 SoapyQS1R::~SoapyQS1R( void )

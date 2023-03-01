@@ -24,37 +24,22 @@
 
 // All routines are true if successful, else false on error
 
-/*
-bool SoapyQS1R::configure_device( void ) {
-    return (libusb_set_configuration( _dev, 1 )==0)         &&(printf("config\n")>0)
-        && (libusb_claim_interface( _dev, 0 )==0)           &&(printf("claim\n")>0)
-        && (libusb_set_interface_alt_setting( _dev, 0, 0 )==0)&&(printf("alt\n")>0)
-        && (libusb_clear_halt( _dev, QS1R_EP2 & 0x0F )==0)  &&(printf("EP2\n")>0)
-        && (libusb_clear_halt( _dev, QS1R_EP4 & 0x0F )==0)  &&(printf("EP4\n")>0)
-        && (libusb_clear_halt( _dev, QS1R_EP6 & 0x0F )==0)  &&(printf("EP6\n")>0)
-        && (libusb_clear_halt( _dev, QS1R_EP8 & 0x0F )==0)  &&(printf("EP8\n")>0) ;
-}
-*/
+
 bool SoapyQS1R::configure_device( void ) {
     return (libusb_set_configuration( _dev, 1 )==0)         &&(printf("config\n")>0)
         && (libusb_claim_interface( _dev, 0 )==0)           &&(printf("claim\n")>0)
         && (libusb_set_interface_alt_setting( _dev, 0, 0 )==0)&&(printf("alt\n")>0) ;
     }
 
-bool SoapyQS1R::load_device( void ) {
-    return firmware_write( "/usr/share/firmware/qs1r_firmware_03032011.hex" ) && (printf("hex file\n")>0)
-        && FPGA_write( "/usr/share/firmware/QS1R_WINRAD_04112011.rbf" )  &&(printf("FPGSA file\n")>0) ;
-}
-
 bool SoapyQS1R::ram_write( int ram_address, unsigned char * buffer, int length ) {
     // write the the FX2 CPU's ram
-    int pkt_size = MAX_EP0_PACKET_SIZE ;
+    int this_size = MAX_EP0_PACKET_SIZE ;
     int this_address = ram_address;
     unsigned char * this_buffer = buffer ;
 
-    for ( int remaining = length ; remaining > 0 ; remaining -= pkt_size ) {
-        if (pkt_size > remaining ) {
-            pkt_size = remaining ;
+    for ( int remaining = length ; remaining > 0 ; remaining -= this_size ) {
+        if (this_size > remaining ) {
+            this_size = remaining ;
         } 
         int sent = libusb_control_transfer( _dev,
             VRT_VENDOR_OUT,
@@ -62,9 +47,10 @@ bool SoapyQS1R::ram_write( int ram_address, unsigned char * buffer, int length )
             this_address,
             0,
             this_buffer,
-            pkt_size,
+            this_size,
             USB_TIMEOUT_CONTROL );
-        if ( sent != pkt_size ) {
+        //printf("RAM WRITE buf=%02x... tried-%d, success=%d\n",this_buffer[0],this_size,sent);
+        if ( sent != this_size ) {
             return false ;
         }
         this_address += sent ;
@@ -73,14 +59,15 @@ bool SoapyQS1R::ram_write( int ram_address, unsigned char * buffer, int length )
     return true ;
 }
 
-bool SoapyQS1R::cpu_reset( int state ) {
+bool SoapyQS1R::cpu_reset( unsigned char state ) {
     // State 1=reset, 0=normal
-    unsigned char s = state ;
-    return ram_write( FX2_RAM_RESET, &s, 1 ) ;
+    return ram_write( FX2_RAM_RESET, &state, 1 ) &&(printf("reset=%d\n",(int)state)>0);
 }
 
 bool SoapyQS1R::firmware_write( const char * filename ) {
     FILE * firm = fopen( filename, "r" ) ;
+    uint32_t sn ;
+    firmware_read_sn( &sn ) && printf("sn:%d\n",sn);
     if ( firm == NULL ) {
         SoapySDR::logf(SOAPY_SDR_ERROR, "Cannot open firmware file -- %s", filename);
         return false ;
@@ -123,12 +110,9 @@ bool SoapyQS1R::firmware_line( char * line ) {
         case 1:
             // ignore
             return true ;
-        case 2:
+        default:
             // unsupported extended address
             return false ;
-        default:
-            // unknown
-            return true ;
     }
 }
 
@@ -175,8 +159,8 @@ bool SoapyQS1R::FPGA_packet( FILE * rbf ) {
     unsigned char buffer[ MAX_EP4_PACKET_SIZE ];
     size_t length ;
     while ( (length = fread( buffer, 1, sizeof(buffer), rbf )) > 0 ) {
-        printf("Read %lu\n",length);
-        if ( ! bulk_write_EP( QS1R_EP2, buffer, length ) ) {
+        //printf("Read %lu\n",length);
+        if ( ! bulk_write_EP( QS1R_EP4, buffer, length ) ) {
             // Error writing FPGA
             fprintf( stderr, "FPGA error writing line %s\n", buffer ) ;
             return false ;
@@ -191,27 +175,32 @@ bool SoapyQS1R::FPGA_control( int state ) {
     int ret = libusb_control_transfer( _dev, VRT_VENDOR_OUT,
         VRQ_FPGA_LOAD, 0, state, dummy, 0,
         USB_TIMEOUT_CONTROL );
-    printf("Control %d\n",ret) ;
+    printf("Control %d, %s\n",ret,libusb_error_name(ret)) ;
     return true ;
 }
 
 bool SoapyQS1R::bulk_write_EP( int ep, unsigned char * buffer, int length )
 {
     int transfered ;
-    if ( libusb_bulk_transfer( _dev, ep, buffer, length, &transfered, USB_TIMEOUT_BULK ) != 0 ) {
-        // error
-        libusb_clear_halt( _dev, ep & 0x0F ) ;
-        return false ;
+    int ret = libusb_bulk_transfer( _dev, ep, buffer, length, &transfered, USB_TIMEOUT_BULK ) ;
+    if ( ret == 0 ) {
+        // good?
+        return transfered==length ;
     }
-    return transfered==length ;
+    // error
+    fprintf(stderr,"Bulk write error %s\n",libusb_error_name(ret) );
+    libusb_clear_halt( _dev, ep & 0x0F ) ;
+    return false ;
 }
 
-bool SoapyQS1R::get_firmware_sn( uint32_t * value )
+bool SoapyQS1R::firmware_read_sn( uint32_t * value )
 {
     unsigned char buf[4] ;
-    if ( libusb_control_transfer( _dev, VRT_VENDOR_IN, VRQ_SN_READ,
-       0, 0, buf, 4, USB_TIMEOUT_CONTROL ) != 4 ) {
-       return false ;
+    int ret = libusb_control_transfer( _dev, VRT_VENDOR_IN, VRQ_SN_READ,
+       0, 0, buf, 4, USB_TIMEOUT_CONTROL ) ;
+    if ( ret != 4 ) {
+        fprintf(stderr,"Cannot read SN %d=%s\n",ret,libusb_error_name(ret));
+        return false ;
     }
     * value = (uint32_t) buf[3] << 24 | (uint32_t) buf[2] << 16 | (uint32_t) buf[1] << 8 | (uint32_t) buf[0] ;
     return true ;
@@ -226,6 +215,11 @@ bool SoapyQS1R::read_multibus( int index, uint32_t * value) const
     }
     *value = (uint32_t) buf[3] << 24 | (uint32_t) buf[2] << 16 | (uint32_t) buf[1] << 8 | (uint32_t) buf[0] ;
     return true ;
+}
+
+bool SoapyQS1R::FPGA_read_sn( uint32_t * value) const
+{
+    return read_multibus( DDC_VERSION_REG, value ) ;
 }
 
 bool SoapyQS1R::write_multibus( int index, uint32_t value)

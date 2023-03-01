@@ -20,7 +20,6 @@
  */
 
 #pragma once
-#include <string.h>
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
@@ -28,8 +27,11 @@
 #include <SoapySDR/Registry.hpp>
 #include <SoapySDR/Logger.hpp>
 #include <set>
-#include <libusb.h>
-#include <math.h>
+extern "C" {
+    #include <libusb.h>
+    #include <math.h>
+    #include <string.h>
+}
 #include <thread>
 
 // Bit macros
@@ -122,7 +124,7 @@ typedef enum {
 #define VRQ_FPGA_LOAD           0x02
 #define FL_BEGIN                0x00
 #define FL_XFER                 1
-#define FL_END                  0x02
+#define FL_END                  2
 
 #define VRQ_FPGA_SET_RESET      0x04    // wValueL: {0,1}
 #define VRQ_MULTI_WRITE         0x05
@@ -137,7 +139,7 @@ typedef enum {
 #define VRQ_EP_RESET            0x0D
 
 #define USB_TIMEOUT_CONTROL     500
-#define USB_TIMEOUT_BULK        1000
+#define USB_TIMEOUT_BULK        11500
 
 #define MAX_EP0_PACKET_SIZE     64
 #define MAX_EP4_PACKET_SIZE     1024
@@ -213,7 +215,7 @@ public:
     std::vector<std::string> getStreamFormats(const int direction, const size_t channel) const;
 
     std::string getNativeStreamFormat(const int direction, const size_t channel, double &fullScale) const;
-
+    double getReferenceClockRate( void ) const ;
     SoapySDR::ArgInfoList getStreamArgsInfo(const int direction, const size_t channel) const;
 
     SoapySDR::Stream *setupStream(
@@ -343,7 +345,7 @@ public:
     std::vector<double> listBandwidths( const int direction, const size_t channel ) const;
 
     /*******************************************************************
-     * HackRF callback
+     * Qs1R callback
      ******************************************************************/
 //    int hackrf_tx_callback( int8_t *buffer, int32_t length );
 
@@ -381,11 +383,12 @@ private:
 
     bool qs1r_by_serial( const char * serial ) ;
     bool qs1r_by_index( const char * index ) ;
+    bool openDevice( const SoapySDR::Kwargs &args ) ;
     bool ram_write( int ram_address, unsigned char * buffer, int length ) ;
-    bool cpu_reset( int state ) ;
+    bool cpu_reset( unsigned char state ) ;
     bool bulk_write_EP( int ep, unsigned char * buffer, int length ) ;
-    bool get_firmware_sn( uint32_t * value ) ;
-    bool load_device( void ) ;
+    bool firmware_read_sn( uint32_t * value ) ;
+    bool FPGA_read_sn( uint32_t * value) const ;
     bool firmware_write( const char * filename ) ;
     bool firmware_line( char * line ) ;
     bool firmware_line_type0( char * line, int flength, int faddr ) ;

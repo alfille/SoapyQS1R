@@ -35,7 +35,7 @@ static std::vector<SoapySDR::Kwargs> findQS1R(const SoapySDR::Kwargs &args)
     for ( auto i =0 ; i < usb_count ; ++i ) {
         struct libusb_device_descriptor desc ;
         libusb_get_device_descriptor( devlist[i], &desc ) ; // always succeeds in modern libusb
-        fprintf(stderr,"Testing device %X:%X\n", desc.idVendor, desc.idProduct);
+        //fprintf(stderr,"Testing device %X:%X\n", desc.idVendor, desc.idProduct);
         if (desc.idVendor == QS1R_VID && desc.idProduct == QS1R_PID) {
             libusb_device_handle * dev ;
             if ( libusb_open( devlist[i], &dev ) == 0 ) {
