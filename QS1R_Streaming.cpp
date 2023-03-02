@@ -448,6 +448,27 @@ int SoapyQS1R::readStream(
     return returnedElems;
 }
 
+int SoapyQS1R::writeStream(
+        SoapySDR::Stream *stream,
+        const void * const *buffs,
+        const size_t numElems,
+        int &flags,
+        const long long timeNs,
+        const long timeoutUs) {
+    return SoapySDR::Device::writeStream( stream, buffs, numElems, flags, timeNs, timeoutUs ) ;
+}
+
+int SoapyQS1R::readStreamStatus(
+        SoapySDR::Stream *stream,
+        size_t &chanMask,
+        int &flags,
+        long long &timeNs,
+        const long timeoutUs) {
+    return SoapySDR::Device::readStreamStatus( stream, chanMask, flags, timeNs, timeoutUs);
+}
+
+
+
 /*******************************************************************
  * Direct buffer access API
  ******************************************************************/
@@ -518,3 +539,21 @@ void SoapyQS1R::releaseReadBuffer(
     //TODO this wont handle out of order releases
     _buf_count--;
 }
+
+int SoapyQS1R::acquireWriteBuffer(
+        SoapySDR::Stream *stream,
+        size_t &handle,
+        void **buffs,
+        const long timeoutUs) {
+    return SoapySDR::Device::acquireWriteBuffer(stream,handle,buffs,timeoutUs) ;
+}
+
+void SoapyQS1R::releaseWriteBuffer(
+        SoapySDR::Stream *stream,
+        const size_t handle,
+        const size_t numElems,
+        int &flags,
+        const long long timeNs) {
+    SoapySDR::Device::releaseWriteBuffer(stream,handle,numElems,flags,timeNs);
+}
+
