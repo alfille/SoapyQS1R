@@ -1,0 +1,2 @@
+# QS1R (and QS1E) radio (SDR radio) grant access
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="fffe", ATTRS{idProduct}=="0008", MODE:="0666"
