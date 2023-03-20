@@ -604,7 +604,7 @@ int SoapyQS1R::qs1r_read_async(qs1r_read_async_cb_t cb, uint32_t buf_num, uint32
     for(i = 0; i < _xfer.size(); ++i) {
         libusb_fill_bulk_transfer(_xfer[i],
                       _dev,
-                      0x81,
+                      QS1R_EP6,
                       _xfer_buf[i],
                       _xfer_buf_len,
                       _libusb_callback,
@@ -697,5 +697,20 @@ int SoapyQS1R::qs1r_cancel_async(void)
     }
 #endif
     return -2;
+}
+
+bool SoapyQS1R::isQS1Epresent( void ) {
+	unsigned char buffer[QS1E_PDAC_LENGTH];
+	int count = libusb_control_transfer( _dev, VRT_VENDOR_IN, VRQ_I2C_READ, QS1E_PDAC_ADDR, 0,buffer, sizeof(buffer), USB_TIMEOUT_CONTROL ) ;
+	return count==QS1E_PDAC_LENGTH ;
+}
+
+bool SoapyQS1R::setTxGain( unsigned int percent ) {
+	uint32_t gain = round( ((double) percent) * 4095. / 100. ) ;
+	unsigned char buffer[2] ;
+	buffer[0] = (gain>>8) & 0xFF ;
+	buffer[1] = gain & 0xFF ;
+	int count = libusb_control_transfer( _dev, VRT_VENDOR_OUT, VRQ_REQ_I2C_WRITE, QS1E_PDAC_ADDR, 0,buffer, sizeof(buffer), USB_TIMEOUT_CONTROL ) ;
+	return count==sizeof(buffer);	
 }
 

@@ -60,7 +60,7 @@ SOAPY_SDR_MODULE_UTIL(
 INSTALL(DIRECTORY firmware DESTINATION /usr/share/QS1R)
 
 #UDEV rules
-INSTALL(FILES udev/10-qs1r.rules DESTINATION /etc/udev/rules.d/10-qs1r.rules)
+INSTALL(FILES udev/10-qs1r.rules DESTINATION /etc/udev/rules.d)
 
 
 ########################################################################

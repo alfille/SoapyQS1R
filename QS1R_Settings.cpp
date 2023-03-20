@@ -91,8 +91,9 @@ bool SoapyQS1R::openDevice( const SoapySDR::Kwargs &args )
         SoapySDR_logf( SOAPY_SDR_INFO, "Opening %s...", args.at("label").c_str());
 
     /* Open the QS1R by matching serial number or index */
-    if (args.count("serial") == 0)
-        throw std::runtime_error("no QS1r device matches");
+    if (args.count("serial") == 0) {
+        throw std::runtime_error("no QS1R device matches (not found)");
+    }
     _serial = args.at("serial");
 
     return qs1r_by_serial(_serial.c_str()) || qs1r_by_index( args.at("index").c_str()) ;
@@ -112,7 +113,7 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
 {
     if ( !openDevice(args) )
     {
-        throw std::runtime_error("no QS1r device matches");
+        throw std::runtime_error("no QS1R device matches (usb open)");
     }
 
     if ( ! configure_device( ) ) {

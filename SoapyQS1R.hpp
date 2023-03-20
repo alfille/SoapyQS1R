@@ -139,7 +139,7 @@ typedef enum {
 #define VRQ_EP_RESET            0x0D
 
 #define USB_TIMEOUT_CONTROL     500
-#define USB_TIMEOUT_BULK        11500
+#define USB_TIMEOUT_BULK        1500
 
 #define MAX_EP0_PACKET_SIZE     64
 #define MAX_EP4_PACKET_SIZE     1024
@@ -161,6 +161,9 @@ typedef enum {
 
 #define FX2LP_PID 0x8613
 #define FX2LP_VID 0x04B4
+
+#define QS1E_PDAC_ADDR 0x60
+#define QS1E_PDAC_LENGTH 5
 
 /*!
  * The session object manages qs1r_init/exit
@@ -429,6 +432,8 @@ private:
     bool write_multibus( int addr, uint32_t value) ;
     bool DDC_putbit( int index, int bit, int value) ;
     bool DDC_getbit( int index, int bit, int * value) const ;
+	bool isQS1Epresent( void ) ;
+	bool setTxGain( unsigned int percent ) ;
 
     typedef void(*qs1r_read_async_cb_t)(unsigned char *buf, uint32_t len, void *ctx);
     int qs1r_cancel_async(void);
