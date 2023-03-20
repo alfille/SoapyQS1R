@@ -335,6 +335,10 @@ public:
      * Gain API
      ******************************************************************/
 
+	void setGain(const int direction, const size_t channel, const std::string &name, const double value) ;
+	double getGain(const int direction, const size_t channel, const std::string &name) const ;
+	SoapySDR::Range getGainRange(const int direction, const size_t channel, const std::string &name) const ;
+
 
     /*******************************************************************
      * Frequency API
@@ -433,7 +437,8 @@ private:
     bool DDC_putbit( int index, int bit, int value) ;
     bool DDC_getbit( int index, int bit, int * value) const ;
 	bool isQS1Epresent( void ) ;
-	bool setTxGain( unsigned int percent ) ;
+	bool setTxGain( const double percent ) ;
+	bool getTxGain( double * percent ) const ;
 
     typedef void(*qs1r_read_async_cb_t)(unsigned char *buf, uint32_t len, void *ctx);
     int qs1r_cancel_async(void);

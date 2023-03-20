@@ -705,12 +705,22 @@ bool SoapyQS1R::isQS1Epresent( void ) {
 	return count==QS1E_PDAC_LENGTH ;
 }
 
-bool SoapyQS1R::setTxGain( unsigned int percent ) {
-	uint32_t gain = round( ((double) percent) * 4095. / 100. ) ;
+bool SoapyQS1R::setTxGain( const double percent ) {
+	uint32_t gain = round( ( percent) * 4095. / 100. ) ;
 	unsigned char buffer[2] ;
 	buffer[0] = (gain>>8) & 0xFF ;
 	buffer[1] = gain & 0xFF ;
 	int count = libusb_control_transfer( _dev, VRT_VENDOR_OUT, VRQ_REQ_I2C_WRITE, QS1E_PDAC_ADDR, 0,buffer, sizeof(buffer), USB_TIMEOUT_CONTROL ) ;
 	return count==sizeof(buffer);	
+}
+
+bool SoapyQS1R::getTxGain( double * percent ) const {
+	unsigned char buffer[2] ;
+	int count = libusb_control_transfer( _dev, VRT_VENDOR_IN, VRQ_I2C_READ, QS1E_PDAC_ADDR, 0,buffer, sizeof(buffer), USB_TIMEOUT_CONTROL ) ;
+	if ( count==sizeof(buffer) ) {
+		*percent = (double) buffer[1] + 256. * buffer[0] ;
+		return true;
+	}
+	return false ;
 }
 

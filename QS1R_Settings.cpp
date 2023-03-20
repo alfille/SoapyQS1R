@@ -547,3 +547,34 @@ std::vector<double> SoapyQS1R::listBandwidths( const int direction, const size_t
     options.push_back( 2000e3 );
     return(options);
 }
+
+void SoapyQS1R::setGain(const int direction, const size_t channel, const std::string &name, const double value)
+{
+    if (direction == SOAPY_SDR_TX) {
+		if ( ! setTxGain( value ) ) {
+			throw std::runtime_error("cannot set TX gain");
+		}
+	}
+}
+
+double SoapyQS1R::getGain(const int direction, const size_t channel, const std::string &name) const
+{
+    if (direction == SOAPY_SDR_TX ) {
+		double gain;
+		if ( getTxGain( &gain ) ) {
+			return gain ;
+		}
+		throw std::runtime_error("cannot read TX gain");
+	} else {
+		return SoapySDR::Device::getGain( direction, channel, name ) ;
+	}
+}
+
+SoapySDR::Range SoapyQS1R::getGainRange(const int direction, const size_t channel, const std::string &name) const
+{
+    if (direction == SOAPY_SDR_TX ) {
+		return SoapySDR::Range(0., 100.);
+	} else {
+		return SoapySDR::Device::getGainRange( direction, channel, name ) ;
+	}
+}
