@@ -31,8 +31,13 @@ extern "C" {
     #include <libusb.h>
     #include <math.h>
     #include <string.h>
+    #include <byteswap.h>
 }
 #include <thread>
+
+#include <bit> // for endian
+// 2 ^ -31
+#define i32_float_scale 4.656612873077393e-10
 
 // Bit macros
 // 32 bit for QS1R registers
@@ -41,11 +46,18 @@ extern "C" {
 #define clearB( var, b ) (var) &= ~(long1 << (b))
 #define getB( var, b ) (((var) & (long1 << (b))) ? 1:0)
 
+// 32 bit samples (each for I and Q)
+#define RX_ELEMENT_BYTES  4
+
+#define DEFAULT_BUF_NUMBER  15
+#define DEFAULT_BUF_LENGTH  (16 * 32 * 512)
+
 enum QS1R_Format {
     QS1R_FORMAT_FLOAT32 =0,
     QS1R_FORMAT_INT16   =1,
     QS1R_FORMAT_INT8    =2,
     QS1R_FORMAT_FLOAT64 =3,
+    QS1R_FORMAT_INT32   =4,
 };
 
 #define DDC_VERSION_REG 0x00
@@ -487,16 +499,11 @@ private:
     std::atomic<bool> _resetBuffer;
     size_t _bufferedElems;
     long long _bufTicks;
+    bool _qs1e_present ;
+    double _tx_gain ;
+    
+    enum qs1r_rx_format { qs1r_cs32, qs1r_cs16, qs1r_cf32 } _rx_format ;
 
-    typedef enum RXFormat
-    {
-        RX_FORMAT_FLOAT32, RX_FORMAT_INT16, RX_FORMAT_INT8
-    } RXFormat;
-    RXFormat _rxFormat;
-    std::vector<std::complex<float> > _lut_32f;
-    std::vector<std::complex<float> > _lut_swap_32f;
-    std::vector<std::complex<int16_t> > _lut_16i;
-    std::vector<std::complex<int16_t> > _lut_swap_16i;
 
     void rx_async_operation(void);
 

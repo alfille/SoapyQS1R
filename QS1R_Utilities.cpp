@@ -301,9 +301,6 @@ bool SoapyQS1R::DDC_getbit( int index, int bit, int * value) const {
 #define LIBUSB_CALL
 #endif
 
-#define DEFAULT_BUF_NUMBER  15
-#define DEFAULT_BUF_LENGTH  (16 * 32 * 512)
-
 #define CTRL_IN     (LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_IN)
 #define CTRL_OUT    (LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT)
 #define CTRL_TIMEOUT    300
@@ -702,6 +699,9 @@ int SoapyQS1R::qs1r_cancel_async(void)
 bool SoapyQS1R::isQS1Epresent( void ) {
 	unsigned char buffer[QS1E_PDAC_LENGTH];
 	int count = libusb_control_transfer( _dev, VRT_VENDOR_IN, VRQ_I2C_READ, QS1E_PDAC_ADDR, 0,buffer, sizeof(buffer), USB_TIMEOUT_CONTROL ) ;
+	if ( count<0 ) {
+		printf("QS1E probe error %s\n",libusb_error_name(count));
+	}
 	return count==QS1E_PDAC_LENGTH ;
 }
 

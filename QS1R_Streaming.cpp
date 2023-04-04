@@ -38,7 +38,7 @@ std::vector<std::string> SoapyQS1R::getStreamFormats(const int direction, const 
     if (direction == SOAPY_SDR_RX) {
         std::vector<std::string> formats;
 
-        formats.push_back(SOAPY_SDR_CS8);
+        formats.push_back(SOAPY_SDR_CS32);
         formats.push_back(SOAPY_SDR_CS16);
         formats.push_back(SOAPY_SDR_CF32);
 
@@ -178,58 +178,22 @@ SoapySDR::Stream *SoapyQS1R::setupStream(
         if (format == SOAPY_SDR_CF32)
         {
             SoapySDR_log(SOAPY_SDR_INFO, "Using format CF32.");
-            _rxFormat = RX_FORMAT_FLOAT32;
+            _rx_format = qs1r_cf32;
         }
         else if (format == SOAPY_SDR_CS16)
         {
             SoapySDR_log(SOAPY_SDR_INFO, "Using format CS16.");
-            _rxFormat = RX_FORMAT_INT16;
+            _rx_format = qs1r_cs16 ;
         }
-        else if (format == SOAPY_SDR_CS8) {
-            SoapySDR_log(SOAPY_SDR_INFO, "Using format CS8.");
-            _rxFormat = RX_FORMAT_INT8;
+        else if (format == SOAPY_SDR_CS32) {
+            SoapySDR_log(SOAPY_SDR_INFO, "Using format CS32.");
+            _rx_format = qs1r_cs32;
         }
         else
         {
             throw std::runtime_error(
                     "setupStream invalid format '" + format
-                            + "' -- Only CS8, CS16 and CF32 are supported by SoapyRTLSDR module.");
-        }
-
-        if (_rxFormat != RX_FORMAT_INT8 && !_lut_32f.size())
-        {
-            SoapySDR_logf(SOAPY_SDR_DEBUG, "Generating RTL-SDR lookup tables");
-            // create lookup tables
-            for (unsigned int i = 0; i <= 0xffff; i++)
-            {
-    # if (__BYTE_ORDER == __LITTLE_ENDIAN)
-                float re = ((i & 0xff) - 127.4f) * (1.0f / 128.0f);
-                float im = ((i >> 8) - 127.4f) * (1.0f / 128.0f);
-    #else
-                float re = ((i >> 8) - 127.4f) * (1.0f / 128.0f);
-                float im = ((i & 0xff) - 127.4f) * (1.0f / 128.0f);
-    #endif
-
-                std::complex<float> v32f, vs32f;
-
-                v32f.real(re);
-                v32f.imag(im);
-                _lut_32f.push_back(v32f);
-
-                vs32f.real(v32f.imag());
-                vs32f.imag(v32f.real());
-                _lut_swap_32f.push_back(vs32f);
-
-                std::complex<int16_t> v16i, vs16i;
-
-                v16i.real(int16_t((float(SHRT_MAX) * re)));
-                v16i.imag(int16_t((float(SHRT_MAX) * im)));
-                _lut_16i.push_back(v16i);
-
-                vs16i.real(vs16i.imag());
-                vs16i.imag(vs16i.real());
-                _lut_swap_16i.push_back(vs16i);
-            }
+                            + "' -- Only CS32, CS16 and CF32 are supported by SoapyRTLSDR module.");
         }
 
         bufferLength = DEFAULT_BUFFER_LENGTH;
@@ -368,71 +332,72 @@ int SoapyQS1R::readStream(
     }
 
     size_t returnedElems = std::min(_bufferedElems, numElems);
+    
+    int32_t * buffInWords = (int32_t *) _currentBuff ;
+    
+	// correct for big-endian machine
+    #if (__BYTE_ORDER == __BIG_ENDIAN)
+		for ( size_t i = 0; i < returnedElems*2; i++)
+		{
+			buffInWords[i] = bswap_32(buffInWords[i]);
+		}
+	#endif
 
     //convert into user's buff0
-    if (_rxFormat == RX_FORMAT_FLOAT32)
+    if (_rx_format == qs1r_cs32)
+    {
+        int32_t *itarget = (int32_t *) buff0;
+        if (_iqSwap)
+        {
+            for (size_t i = 0; i < returnedElems*2; i+=2)
+            {
+                itarget[i] = buffInWords[i+1];
+                itarget[i+1] = buffInWords[i];
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < returnedElems*2; i++)
+            {
+                itarget[i] = buffInWords[i];
+            }
+        }
+    }
+    else if (_rx_format == qs1r_cf32)
     {
         float *ftarget = (float *) buff0;
-        std::complex<float> tmp;
         if (_iqSwap)
         {
-            for (size_t i = 0; i < returnedElems; i++)
+            for (size_t i = 0; i < returnedElems*2; i+=2)
             {
-                tmp = _lut_swap_32f[*((uint16_t*) &_currentBuff[2 * i])];
-                ftarget[i * 2] = tmp.real();
-                ftarget[i * 2 + 1] = tmp.imag();
+                ftarget[i] = (static_cast<float>(buffInWords[i+1])) * i32_float_scale;
+                ftarget[i+1] = (static_cast<float>(buffInWords[i])) * i32_float_scale;
             }
         }
         else
         {
-            for (size_t i = 0; i < returnedElems; i++)
+            for (size_t i = 0; i < returnedElems*2; i++)
             {
-                tmp = _lut_32f[*((uint16_t*) &_currentBuff[2 * i])];
-                ftarget[i * 2] = tmp.real();
-                ftarget[i * 2 + 1] = tmp.imag();
+                ftarget[i] = (static_cast<float>(buffInWords[i])) * i32_float_scale;
             }
         }
-    }
-    else if (_rxFormat == RX_FORMAT_INT16)
+   }
+    if (_rx_format == qs1r_cs16)
     {
         int16_t *itarget = (int16_t *) buff0;
-        std::complex<int16_t> tmp;
         if (_iqSwap)
         {
-            for (size_t i = 0; i < returnedElems; i++)
+            for (size_t i = 0; i < returnedElems*2; i+=2)
             {
-                tmp = _lut_swap_16i[*((uint16_t*) &_currentBuff[2 * i])];
-                itarget[i * 2] = tmp.real();
-                itarget[i * 2 + 1] = tmp.imag();
+                itarget[i] = buffInWords[i+1]>>16;
+                itarget[i+1] = buffInWords[i]>>16;
             }
         }
         else
         {
-            for (size_t i = 0; i < returnedElems; i++)
+            for (size_t i = 0; i < returnedElems*2; i++)
             {
-                tmp = _lut_16i[*((uint16_t*) &_currentBuff[2 * i])];
-                itarget[i * 2] = tmp.real();
-                itarget[i * 2 + 1] = tmp.imag();
-            }
-        }
-    }
-    else if (_rxFormat == RX_FORMAT_INT8)
-    {
-        int8_t *itarget = (int8_t *) buff0;
-        if (_iqSwap)
-        {
-            for (size_t i = 0; i < returnedElems; i++)
-            {
-                itarget[i * 2] = _currentBuff[i * 2 + 1]-128;
-                itarget[i * 2 + 1] = _currentBuff[i * 2]-128;
-            }
-        }
-        else
-        {
-            for (size_t i = 0; i < returnedElems; i++)
-            {
-                itarget[i * 2] = _currentBuff[i * 2]-128;
-                itarget[i * 2 + 1] = _currentBuff[i * 2 + 1]-128;
+                itarget[i] = buffInWords[i]>>16;
             }
         }
     }

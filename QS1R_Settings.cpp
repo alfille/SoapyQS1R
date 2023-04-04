@@ -109,7 +109,8 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
     _RX_FREQ(0.0),
     _freq_corr(0.0),
     _antenna("RX BNC LPF"),
-    _ticks(0)
+    _ticks(0),
+    _qs1e_present(false)
 {
     if ( !openDevice(args) )
     {
@@ -148,7 +149,20 @@ SoapyQS1R::SoapyQS1R( const SoapySDR::Kwargs &args ):
             throw std::runtime_error("Cannot load FPGA firmware file");
         }
     }
-    FPGA_read_sn( &fw ) && printf("FPGA %08X\n",fw) ;            
+    FPGA_read_sn( &fw ) && printf("FPGA sn: %08X\n",fw) ;    
+    
+    /* Check if transmit */
+    _qs1e_present = isQS1Epresent() ;
+    if ( _qs1e_present ) {
+        printf("QS1E present\n");
+        if ( ! getTxGain( &_tx_gain ) ) {
+            printf("QS1E!!!\n") ;
+            throw std::runtime_error("Cannot read QS1E TX gain");
+        }
+    } else {
+        printf("QS1E not present\n");
+    }  
+    printf("Setup done\n");    
 }
 
 SoapyQS1R::~SoapyQS1R( void )
@@ -550,31 +564,29 @@ std::vector<double> SoapyQS1R::listBandwidths( const int direction, const size_t
 
 void SoapyQS1R::setGain(const int direction, const size_t channel, const std::string &name, const double value)
 {
-    if (direction == SOAPY_SDR_TX) {
-		if ( ! setTxGain( value ) ) {
-			throw std::runtime_error("cannot set TX gain");
-		}
-	}
+    if (_qs1e_present && direction == SOAPY_SDR_TX) {
+        if ( setTxGain( value ) ) {
+            _tx_gain = value ;
+        } else {
+            throw std::runtime_error("cannot set TX gain");
+        }
+    }
 }
 
 double SoapyQS1R::getGain(const int direction, const size_t channel, const std::string &name) const
 {
-    if (direction == SOAPY_SDR_TX ) {
-		double gain;
-		if ( getTxGain( &gain ) ) {
-			return gain ;
-		}
-		throw std::runtime_error("cannot read TX gain");
-	} else {
-		return SoapySDR::Device::getGain( direction, channel, name ) ;
-	}
+    if (_qs1e_present && direction == SOAPY_SDR_TX ) {
+        return _tx_gain ;
+    } else {
+        return SoapySDR::Device::getGain( direction, channel, name ) ;
+    }
 }
 
 SoapySDR::Range SoapyQS1R::getGainRange(const int direction, const size_t channel, const std::string &name) const
 {
     if (direction == SOAPY_SDR_TX ) {
-		return SoapySDR::Range(0., 100.);
-	} else {
-		return SoapySDR::Device::getGainRange( direction, channel, name ) ;
-	}
+        return SoapySDR::Range(0., 100.);
+    } else {
+        return SoapySDR::Device::getGainRange( direction, channel, name ) ;
+    }
 }
